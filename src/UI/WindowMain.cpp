@@ -5,6 +5,7 @@
 
 #include <QMessageBox>
 #include <QWindow>
+#include <QCloseEvent>
 #include <QRegularExpressionValidator>
 #include <QStringList>
 #include <QClipboard>
