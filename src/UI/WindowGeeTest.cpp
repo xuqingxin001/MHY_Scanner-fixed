@@ -1,4 +1,4 @@
-﻿#include "WindowGeeTest.h"
+#include "WindowGeeTest.h"
 
 #include <iostream>
 #include <format>
@@ -7,7 +7,7 @@ WindowGeeTest::WindowGeeTest(QWidget* parent) :
     QWidget(parent)
 {
     setWindowFlags(Qt::Window);
-    setFixedSize(QSize(400, 450));
+    setFixedSize(QSize(460, 680));
     setWindowTitle("请完成验证");
 }
 
@@ -34,8 +34,12 @@ void WindowGeeTest::Init(const std::wstring_view gt, const std::wstring_view cha
                 <head>
                     <title>GeeTest</title>
                     <style>
+                        html, body {{
+                            margin:0; padding:0; overflow:hidden;
+                        }}
                         #geetest-div {{
-                            align-items:center
+                            display:flex; align-items:center; justify-content:center;
+                            width:100%; height:100%;
                         }}
                     </style>
                 </head>
