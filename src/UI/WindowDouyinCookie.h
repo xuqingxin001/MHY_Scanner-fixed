@@ -31,4 +31,5 @@ private:
     wil::com_ptr<ICoreWebView2Settings> settings;
     EventRegistrationToken webResourceRequestedToken{};
     QPushButton* btnSave{};
+    std::string m_cookieStr{};
 };

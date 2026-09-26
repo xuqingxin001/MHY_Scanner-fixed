@@ -94,6 +94,28 @@ void WindowDouyinCookie::showEvent(QShowEvent* event)
                                                   settings->put_IsStatusBarEnabled(false);
                                                   settings->put_AreDefaultScriptDialogsEnabled(true);
 
+                                                  // 拦截抖音请求, 从请求头读取 Cookie(HttpOnly 也能拿到)
+                                                  webView->AddWebResourceRequestedFilter(
+                                                      L"https://www.douyin.com/*",
+                                                      COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                                                  webView->add_WebResourceRequested(
+                                                      Microsoft::WRL::Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+                                                          [this](ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args) {
+                                                              wil::com_ptr<ICoreWebView2WebResourceRequest> request;
+                                                              args->get_Request(&request);
+                                                              wil::com_ptr<ICoreWebView2HttpRequestHeaders> headers;
+                                                              request->get_Headers(&headers);
+                                                              LPWSTR cookieHeader = nullptr;
+                                                              if (SUCCEEDED(headers->GetHeader(L"Cookie", &cookieHeader)) && cookieHeader)
+                                                              {
+                                                                  m_cookieStr = WideToUtf8(cookieHeader);
+                                                                  CoTaskMemFree(cookieHeader);
+                                                              }
+                                                              return S_OK;
+                                                          })
+                                                          .Get(),
+                                                      &webResourceRequestedToken);
+
                                                   webView->Navigate(L"https://www.douyin.com/");
 
                                                   webView->add_NewWindowRequested(
@@ -112,74 +134,22 @@ void WindowDouyinCookie::showEvent(QShowEvent* event)
 
 void WindowDouyinCookie::saveCookie()
 {
-    if (!webView)
+    if (m_cookieStr.empty())
     {
-        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("网页还没加载完成，请稍等片刻再点。"));
+        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("还没捕获到抖音Cookie，请先完成扫码登录，页面出现「扫一扫登录成功」后再点。"));
         return;
     }
 
-    wil::com_ptr<ICoreWebView2CookieManager> cookieManager;
-    if (FAILED(webView->get_CookieManager(&cookieManager)))
+    // 写入 exe 所在目录的 douyin_cookie.txt
+    std::ofstream ofs("douyin_cookie.txt", std::ios::trunc);
+    if (ofs)
     {
-        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("获取Cookie管理器失败。"));
-        return;
+        ofs << m_cookieStr;
+        ofs.close();
+        QMessageBox::information(this, QString::fromUtf8("成功"), QString::fromUtf8("抖音Cookie已保存到 douyin_cookie.txt！\n现在可以监视抖音直播间了。"));
     }
-
-    cookieManager->GetCookiesAsync(
-        Microsoft::WRL::Callback<ICoreWebView2GetCookiesCompletedHandler>(
-            [this](HRESULT error, ICoreWebView2CookieList* cookieList) {
-                if (!!error || !cookieList)
-                {
-                    QMetaObject::invokeMethod(this, [this]() {
-                        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("读取Cookie失败，请重试。"));
-                    });
-                    return error;
-                }
-
-                std::string cookieStr;
-                unsigned int count = 0;
-                cookieList->get_Count(&count);
-                for (unsigned int i = 0; i < count; ++i)
-                {
-                    wil::com_ptr<ICoreWebView2Cookie> cookie;
-                    cookieList->GetValueAtIndex(i, &cookie);
-                    LPWSTR name = nullptr;
-                    LPWSTR value = nullptr;
-                    cookie->get_Name(&name);
-                    cookie->get_Value(&value);
-                    if (name && value)
-                    {
-                        cookieStr += WideToUtf8(name);
-                        cookieStr += '=';
-                        cookieStr += WideToUtf8(value);
-                        cookieStr += "; ";
-                    }
-                    if (name)
-                    {
-                        CoTaskMemFree(name);
-                    }
-                    if (value)
-                    {
-                        CoTaskMemFree(value);
-                    }
-                }
-
-                // 写入 exe 所在目录的 douyin_cookie.txt
-                std::ofstream ofs("douyin_cookie.txt", std::ios::trunc);
-                if (ofs)
-                {
-                    ofs << cookieStr;
-                    ofs.close();
-                    QMetaObject::invokeMethod(this, [this]() {
-                        QMessageBox::information(this, QString::fromUtf8("成功"), QString::fromUtf8("抖音Cookie已保存到 douyin_cookie.txt！\n现在可以监视抖音直播间了。"));
-                    });
-                }
-                else
-                {
-                    QMetaObject::invokeMethod(this, [this]() {
-                        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("写入 douyin_cookie.txt 失败，请检查软件目录是否有写权限。"));
-                    });
-                }
-                return S_OK;
-            }).Get());
+    else
+    {
+        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("写入 douyin_cookie.txt 失败，请检查软件目录是否有写权限。"));
+    }
 }
