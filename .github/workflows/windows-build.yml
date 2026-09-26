@@ -1,4 +1,4 @@
-﻿name: Windows Build
+name: Windows Build
 
 on:
   push:
@@ -62,6 +62,11 @@ jobs:
       - name: Install
         run: |
           cmake --install build --config ${{ env.BUILD_CONFIGURATION }}
+
+      - name: Add runtime files
+        run: |
+          Copy-Item "${{ github.workspace }}\douyin_cookie.txt" "${{ env.INSTALL_DIR }}\" -Force
+          Copy-Item "${{ github.workspace }}\使用说明.txt" "${{ env.INSTALL_DIR }}\" -Force
 
       - name: Create ZIP
         run: |

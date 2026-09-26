@@ -1,0 +1,49 @@
+﻿MHY_Scanner 修复版使用说明
+==========================
+
+【版本信息】
+- 基于官方 DSVVA/MHY_Scanner 1.16.0 源码自行修改编译 (v1.16.1)
+- 构建时间: 2026-09-26
+
+【本版修复内容】
+1. 添加账号扫码失败 (手机端 decode err)
+   -> 改用最新 passport 扫码接口 (createQRLogin/queryQRLoginStatus)
+2. 监视屏幕/直播间 "登录状态失效" (getGameToken 失效)
+   -> 根因: 米游社已废弃 takumi 账号接口族 (getGameToken 等全部返回 -100)
+   -> 改用新 passport 扫码确认流程 (scanQRLogin/confirmQRLogin),
+      stoken 直接认证, 不再依赖 game_token
+   -> 账号有效性校验改用 bbs-api userinfo + DS 签名 (实测可用)
+3. 崩坏3登录验证码框过小 (字/确认键超出界面)
+   -> 窗口放大到 460x680, 内容自适应居中
+4. 抖音监视直播间没反应
+   -> 抖音拉流需要有效 cookie, 现在从 douyin_cookie.txt 读取
+5. 监视完退出软件无法重新打开
+   -> 退出逻辑修复
+
+【首次使用步骤】
+1. 解压后整个文件夹放任意位置
+2. Config 目录保留你自己的账号配置 (userinfo.json 不会被覆盖)
+3. 运行 MHY_Scanner.exe
+
+【添加账号】
+- 官服: 点"添加账号" -> 用米游社 App 扫码 (需最新版米游社)
+- 崩坏3B服: 填 uid + stoken
+
+【监视屏幕/直播间】
+- 监视屏幕: 扫描屏幕上游戏画面里的二维码
+- 监视直播间: 输入直播间链接 (B站/抖音), 程序拉流后扫描画面二维码
+- 二维码确认登录使用你的账号 stoken, 与抖音 cookie 无关
+
+【抖音 cookie 获取 (重要)】
+抖音监视需要有效的抖音 web cookie, 获取方法:
+1. 电脑浏览器打开 https://www.douyin.com 并登录
+2. 按 F12 打开开发者工具 -> Network (网络) 标签
+3. 刷新页面, 随便点一个请求, 找到 Request Headers 里的 Cookie:
+4. 复制 Cookie: 后面的完整内容
+5. 粘贴到本目录 douyin_cookie.txt 里 (只留一行, 不要有多余内容)
+6. cookie 过期后重复此步骤更新即可
+
+【常见问题】
+- 监视提示"登录状态失效": 账号 stoken 可能过期, 重新添加账号
+- 抖音没画面: 检查 douyin_cookie.txt 是否有最新有效 cookie
+- 崩坏3验证码框显示不全: 已放大适配, 若仍有问题请截图反馈
