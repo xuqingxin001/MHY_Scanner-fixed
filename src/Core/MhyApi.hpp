@@ -363,7 +363,7 @@ inline bool CheckStokenValid(
     reqHeaders["Cookie"] = cookie;
     reqHeaders["DS"] = ds;
     const auto response = cpr::Get(
-        cpr::Url{ std::format("{}?uid={}", api::mhy::mys::userinfo, uid) },
+        cpr::Url{ std::string(api::mhy::mys::userinfo) + "?uid=" + std::string(uid) },
         cpr::Header{ reqHeaders });
 
     if (response.error || response.status_code != 200 || response.text.empty())
