@@ -16,5 +16,11 @@
 		{
 			"name": "webview2"
 		}
+	],
+	"overrides": [
+		{
+			"name": "webview2",
+			"version": "1.0.2592.51"
+		}
 	]
 }
