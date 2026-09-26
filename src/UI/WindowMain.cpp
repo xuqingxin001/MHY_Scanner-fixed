@@ -10,7 +10,6 @@
 #include <QClipboard>
 
 #include "MhyApi.hpp"
-#include "WindowDouyinCookie.h"
 #include "BSGameSDK.hpp"
 
 WindowMain::WindowMain(QWidget* parent) :
@@ -21,14 +20,6 @@ WindowMain::WindowMain(QWidget* parent) :
     QApplication::setFont(QFont("微软雅黑", 9));
     ui.setupUi(this);
     connect(ui.action1_3, &QAction::triggered, this, &WindowMain::AddAccount);
-    // 获取抖音Cookie: 内置网页扫码登录, 自动保存到 douyin_cookie.txt
-    auto* actionDouyinCookie = new QAction(QString::fromUtf8("获取抖音Cookie"), this);
-    ui.menu->addAction(actionDouyinCookie);
-    connect(actionDouyinCookie, &QAction::triggered, this, [this]() {
-        auto* w = new WindowDouyinCookie(this);
-        w->setAttribute(Qt::WA_DeleteOnClose);
-        w->show();
-    });
     connect(ui.action1_4, &QAction::triggered, this, &WindowMain::SetDefaultAccount);
     connect(ui.action2_3, &QAction::triggered, this, &WindowMain::DeleteAccount);
     connect(ui.action1_2, &QAction::triggered, this, [this]() {

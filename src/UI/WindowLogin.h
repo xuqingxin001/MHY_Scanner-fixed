@@ -24,6 +24,7 @@
 #include <QMutex>
 
 #include "WindowGeeTest.h"
+#include "WindowDouyinCookie.h"
 #include "ApiDefs.hpp"
 
 class WindowLogin : public QWidget
@@ -49,8 +50,9 @@ protected:
 
 private:
     WindowGeeTest m_WindowGeeTest{ this };
-    std::array<QWidget*, 4> tabs{};
-    static constexpr std::array<const std::string_view, 4> tabsName{ "短信登录", "扫码登录", "Cookie登录", "Bilibili崩坏3登录" };
+    WindowDouyinCookie m_WindowDouyinCookie{ this };
+    std::array<QWidget*, 5> tabs{};
+    static constexpr std::array<const std::string_view, 5> tabsName{ "短信登录", "扫码登录", "Cookie登录", "Bilibili崩坏3登录", "抖音扫码登录" };
     QTabWidget* tabWidget{};
     QHBoxLayout* MainHLayout{};
 
@@ -97,6 +99,12 @@ private:
     QHBoxLayout* Tab3HLayout2{};
     QPushButton* Tab3pBtConfirm{};
     QPushButton* Tab3pBtCancel{};
+
+    void InitTabs4();
+    QVBoxLayout* Tab4MainVLayout{};
+    QLabel* Tab4Prompt{};
+    QPushButton* pBtDouyinCookie{};
+    QHBoxLayout* Tab4ButtonHLayout{};
 
     void Initconnect();
 

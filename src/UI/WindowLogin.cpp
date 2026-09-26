@@ -35,6 +35,7 @@ WindowLogin::WindowLogin(QWidget* parent) :
     InitTabs1();
     InitTabs2();
     InitTabs3();
+    InitTabs4();
     MainHLayout = new QHBoxLayout(this);
     MainHLayout->setContentsMargins(0, 0, 0, 0);
     MainHLayout->addWidget(tabWidget);
@@ -238,6 +239,33 @@ void WindowLogin::InitTabs3()
     Tab3MainVLayout->addLayout(Tab3HLayout2);
 }
 
+void WindowLogin::InitTabs4()
+{
+    Tab4MainVLayout = new QVBoxLayout(tabs[4]);
+    Tab4MainVLayout->setSpacing(0);
+    Tab4MainVLayout->setContentsMargins(30, 60, 30, 30);
+
+    Tab4Prompt = new QLabel(tabs[4]);
+    Tab4Prompt->setAlignment(Qt::AlignCenter);
+    Tab4Prompt->setFont(QFont("微软雅黑", 13));
+    Tab4Prompt->setWordWrap(true);
+    Tab4Prompt->setText(QString::fromUtf8("内置窗口打开抖音网页版\n用手机抖音App扫码登录\n登录完成后自动保存Cookie到 douyin_cookie.txt"));
+    Tab4MainVLayout->addWidget(Tab4Prompt);
+
+    Tab4ButtonHLayout = new QHBoxLayout();
+    Tab4ButtonHLayout->setContentsMargins(30, 40, 30, 60);
+    pBtDouyinCookie = new QPushButton(tabs[4]);
+    pBtDouyinCookie->setMinimumSize(QSize(0, 50));
+    pBtDouyinCookie->setFont(QFont("微软雅黑", 14));
+    pBtDouyinCookie->setText(QString::fromUtf8("打开抖音扫码登录窗口"));
+    Tab4ButtonHLayout->addWidget(pBtDouyinCookie);
+    Tab4MainVLayout->addLayout(Tab4ButtonHLayout);
+
+    connect(pBtDouyinCookie, &QPushButton::clicked, this, [this]() {
+        m_WindowDouyinCookie.show();
+    });
+}
+
 void WindowLogin::Initconnect()
 {
     connect(this, &WindowLogin::showMessagebox, this, [this](const QString& Message) {
@@ -288,6 +316,10 @@ void WindowLogin::Initconnect()
             break;
         }
         case 3:
+        {
+            break;
+        }
+        case 4:
         {
             break;
         }
