@@ -102,9 +102,6 @@ private:
 
     void InitTabs4();
     QVBoxLayout* Tab4MainVLayout{};
-    QLabel* Tab4Prompt{};
-    QPushButton* pBtDouyinCookie{};
-    QHBoxLayout* Tab4ButtonHLayout{};
 
     void Initconnect();
 

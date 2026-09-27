@@ -32,15 +32,11 @@ namespace
 WindowDouyinCookie::WindowDouyinCookie(QWidget* parent) :
     QWidget(parent)
 {
-    setWindowFlags(Qt::Window);
-    setFixedSize(QSize(560, 760));
-    setWindowTitle(QString::fromUtf8("抖音扫码登录 - 自动保存Cookie"));
-
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto* tip = new QLabel(QString::fromUtf8("用手机抖音App扫码登录网页版抖音\n扫码登录成功后软件会自动保存Cookie并关闭本窗口，无需其他操作。"), this);
+    auto* tip = new QLabel(QString::fromUtf8("用手机抖音App扫下方二维码登录\n扫码登录成功后软件会自动保存Cookie，无需其他操作。"), this);
     tip->setWordWrap(true);
     tip->setAlignment(Qt::AlignCenter);
     tip->setStyleSheet(QString::fromUtf8("background:#202124;color:#e8eaed;font-size:13px;padding:10px;"));
@@ -129,7 +125,8 @@ void WindowDouyinCookie::showEvent(QShowEvent* event)
                                                           .Get(),
                                                       &webResourceRequestedToken);
 
-                                                  webView->Navigate(L"https://www.douyin.com/");
+                                                  // 直接打开抖音登录页(含扫码登录二维码)
+                                                  webView->Navigate(L"https://www.douyin.com/passport/?type=login");
 
                                                   webView->add_NewWindowRequested(
                                                       Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
