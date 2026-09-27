@@ -125,8 +125,24 @@ void WindowDouyinCookie::showEvent(QShowEvent* event)
                                                           .Get(),
                                                       &webResourceRequestedToken);
 
-                                                  // 直接打开抖音登录页(含扫码登录二维码)
-                                                  webView->Navigate(L"https://www.douyin.com/passport/?type=login");
+                                                  // 打开抖音首页, 加载完成后自动点击"登录"弹出扫码登录框
+                                                  webView->Navigate(L"https://www.douyin.com/");
+
+                                                  webView->add_NavigationCompleted(
+                                                      Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                                          [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) {
+                                                              BOOL success = FALSE;
+                                                              args->get_IsSuccess(&success);
+                                                              if (success)
+                                                              {
+                                                                  // 等页面渲染完, 自动点击右上角"登录"按钮
+                                                                  QTimer::singleShot(1200, this, [this]() { ClickLoginButton(); });
+                                                                  QTimer::singleShot(3000, this, [this]() { ClickLoginButton(); });
+                                                              }
+                                                              return S_OK;
+                                                          })
+                                                          .Get(),
+                                                      &webResourceRequestedToken);
 
                                                   webView->add_NewWindowRequested(
                                                       Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
@@ -140,6 +156,30 @@ void WindowDouyinCookie::showEvent(QShowEvent* event)
                                               }).Get());
             return S_OK;
         }).Get());
+}
+
+void WindowDouyinCookie::ClickLoginButton()
+{
+    if (!webView)
+    {
+        return;
+    }
+    // 找到文案为"登录"的按钮并点击, 弹出抖音扫码登录框
+    webView->ExecuteScript(
+        LR"((function(){
+            var hit = null;
+            var nodes = document.querySelectorAll('button,span,div,[role="button"],a');
+            for (var i=0;i<nodes.length;i++){
+                var t = (nodes[i].innerText || '').trim();
+                if (t === '登录' || t === '立即登录') { hit = nodes[i]; break; }
+            }
+            if (hit) { hit.click(); return 'clicked'; }
+            return 'notfound';
+        })();)",
+        Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+            [](HRESULT error, LPCWSTR result) {
+                return S_OK;
+            }).Get());
 }
 
 void WindowDouyinCookie::saveCookie()

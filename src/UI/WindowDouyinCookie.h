@@ -25,6 +25,7 @@ protected:
 
 private:
     void saveCookie();
+    void ClickLoginButton();
 
     wil::com_ptr<ICoreWebView2Controller> webViewController{};
     wil::com_ptr<ICoreWebView2> webView{};
