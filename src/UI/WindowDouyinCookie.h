@@ -32,4 +32,5 @@ private:
     EventRegistrationToken webResourceRequestedToken{};
     QPushButton* btnSave{};
     std::string m_cookieStr{};
+    bool m_autoSaved{ false };
 };

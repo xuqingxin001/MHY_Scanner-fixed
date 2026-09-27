@@ -9,6 +9,7 @@
 #include <QMetaObject>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QTimer>
 
 #include <wrl.h>
 
@@ -39,7 +40,7 @@ WindowDouyinCookie::WindowDouyinCookie(QWidget* parent) :
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto* tip = new QLabel(QString::fromUtf8("用手机抖音App扫码登录网页版抖音，登录完成后点击下方按钮，软件会自动保存Cookie。"), this);
+    auto* tip = new QLabel(QString::fromUtf8("用手机抖音App扫码登录网页版抖音\n扫码登录成功后软件会自动保存Cookie并关闭本窗口，无需其他操作。"), this);
     tip->setWordWrap(true);
     tip->setAlignment(Qt::AlignCenter);
     tip->setStyleSheet(QString::fromUtf8("background:#202124;color:#e8eaed;font-size:13px;padding:10px;"));
@@ -71,6 +72,8 @@ void WindowDouyinCookie::closeEvent(QCloseEvent* event)
 
 void WindowDouyinCookie::showEvent(QShowEvent* event)
 {
+    m_autoSaved = false;
+    m_cookieStr.clear();
     CreateCoreWebView2EnvironmentWithOptions(
         nullptr, nullptr, nullptr,
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([this](HRESULT error, ICoreWebView2Environment* env) {
@@ -110,6 +113,16 @@ void WindowDouyinCookie::showEvent(QShowEvent* event)
                                                               {
                                                                   m_cookieStr = WideToUtf8(cookieHeader);
                                                                   CoTaskMemFree(cookieHeader);
+
+                                                                  // 检测登录态: passport_auth_status=1 是抖音登录成功的明确标志
+                                                                  if (!m_autoSaved && m_cookieStr.find("passport_auth_status=1") != std::string::npos)
+                                                                  {
+                                                                      m_autoSaved = true;
+                                                                      // 等2秒让cookie写完整, 再自动保存
+                                                                      QTimer::singleShot(2000, this, [this]() {
+                                                                          saveCookie();
+                                                                      });
+                                                                  }
                                                               }
                                                               return S_OK;
                                                           })
@@ -146,7 +159,8 @@ void WindowDouyinCookie::saveCookie()
     {
         ofs << m_cookieStr;
         ofs.close();
-        QMessageBox::information(this, QString::fromUtf8("成功"), QString::fromUtf8("抖音Cookie已保存到 douyin_cookie.txt！\n现在可以监视抖音直播间了。"));
+        QMessageBox::information(this, QString::fromUtf8("登录成功"), QString::fromUtf8("抖音Cookie已自动保存到 douyin_cookie.txt！\n现在可以监视抖音直播间了。"));
+        close();
     }
     else
     {
