@@ -26,6 +26,8 @@ protected:
     void showEvent(QShowEvent* event) override;
 
 private:
+    void FitWindow(int width, int height);
+
     wil::com_ptr<ICoreWebView2Controller> webViewController{};
     wil::com_ptr<ICoreWebView2> webView{};
     wil::com_ptr<ICoreWebView2Settings> settings;
