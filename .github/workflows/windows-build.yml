@@ -68,10 +68,11 @@ jobs:
           powershell Compress-Archive -Path "${{ env.INSTALL_DIR }}\*" -DestinationPath "${{ github.workspace }}\${{ env.ZIP_NAME }}"
 
       - name: Upload artifact
+        # 直接上传 install 目录, artifact 下载解压后就是 exe+资源(单层), 不再 zip 套 zip
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ZIP_NAME }}
-          path: ${{ github.workspace }}\${{ env.ZIP_NAME }}
+          name: MHY_Scanner_${{ github.ref_name }}
+          path: ${{ env.INSTALL_DIR }}
           retention-days: 5
 
       - name: Create GitHub Release
