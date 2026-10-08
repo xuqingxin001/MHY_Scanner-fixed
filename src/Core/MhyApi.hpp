@@ -18,6 +18,7 @@
 #include "CryptoKit.h"
 #include "UtilString.hpp"
 #include "TimeStamp.hpp"
+#include "Logger.hpp"
 
 static const std::string device_id{ CreateUUID::CreateUUID4() };
 static GameType loginType{ GameType::TearsOfThemis };
@@ -328,8 +329,19 @@ inline bool PassportQRCodeLogin(
             const auto j = nlohmann::json::parse(response.text, nullptr, false);
             if (!j.is_discarded() && j.value("retcode", -1) == 0)
             {
+                DebugLog::Log(std::string("[MhyApi] 二次确认成功 ") + (confirm ? "confirm" : "scan") +
+                              " attempt=" + std::to_string(attempt));
                 return true;
             }
+            DebugLog::Log(std::string("[MhyApi] 二次确认返回非0 ") + (confirm ? "confirm" : "scan") +
+                          " attempt=" + std::to_string(attempt) + " retcode=" + std::to_string(j.value("retcode", -1)));
+        }
+        else
+        {
+            DebugLog::Log(std::string("[MhyApi] 二次确认请求失败 ") + (confirm ? "confirm" : "scan") +
+                          " attempt=" + std::to_string(attempt) +
+                          " http=" + std::to_string(response.status_code) +
+                          (response.error ? " err=" + std::string(response.error.message) : ""));
         }
         if (attempt < 2)
         {
@@ -589,7 +601,10 @@ inline ScanRet scanConfirm(const std::string& ticket, const std::string& uid, co
 {
     auto [code, open_id, combo_token, combo_id] = GetBH3ExternalLoginInfo(uid, access_key);
     if (code != 0)
+    {
+        DebugLog::Log("[MhyApi] B服崩坏3获取外部登录信息失败 code=" + std::to_string(code));
         return ScanRet::FAILURE_2;
+    }
 
     const auto raw =
         nlohmann::json{
@@ -645,12 +660,22 @@ inline ScanRet scanConfirm(const std::string& ticket, const std::string& uid, co
                 const auto j = nlohmann::json::parse(response.text);
                 if (j.value("retcode", -1) == 0)
                 {
+                    DebugLog::Log("[MhyApi] B服崩坏3确认成功 attempt=" + std::to_string(attempt));
                     return ScanRet::SUCCESS;
                 }
+                DebugLog::Log("[MhyApi] B服崩坏3确认返回非0 attempt=" + std::to_string(attempt) +
+                              " retcode=" + std::to_string(j.value("retcode", -1)));
             }
-            catch (const std::exception&)
+            catch (const std::exception& e)
             {
+                DebugLog::Log(std::string("[MhyApi] B服崩坏3确认响应解析异常: ") + e.what());
             }
+        }
+        else
+        {
+            DebugLog::Log("[MhyApi] B服崩坏3确认请求失败 attempt=" + std::to_string(attempt) +
+                          " http=" + std::to_string(response.status_code) +
+                          (response.error ? " err=" + std::string(response.error.message) : ""));
         }
         if (attempt < 1)
         {
