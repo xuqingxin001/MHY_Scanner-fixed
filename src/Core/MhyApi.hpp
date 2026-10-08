@@ -7,6 +7,8 @@
 #include <sstream>
 #include <optional>
 #include <iostream>
+#include <thread>
+#include <chrono>
 
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
@@ -307,28 +309,34 @@ inline bool PassportQRCodeLogin(
     const std::string url = confirm ?
         std::string(std::string_view(api::mhy::passport::confirm_qr_login)) :
         std::string(std::string_view(api::mhy::passport::scan_qr_login));
-    const auto response = cpr::Post(
-        cpr::Url{ url },
-        cpr::Body{ body.dump() },
-        cpr::Header{
-            { "Content-Type", "application/json" },
-            { "x-rpc-app_id", "bll8iq97cem8" },
-            { "x-rpc-device_id", device_id },
-            { "Cookie", cookie } });
 
-    if (response.error || response.status_code != 200 || response.text.empty())
+    // 加超时 + 失败重试(最多3次, 间隔1秒), 避免确认请求挂起导致"二次确认卡住"
+    for (int attempt = 0; attempt < 3; ++attempt)
     {
-        return false;
-    }
+        const auto response = cpr::Post(
+            cpr::Url{ url },
+            cpr::Body{ body.dump() },
+            cpr::Header{
+                { "Content-Type", "application/json" },
+                { "x-rpc-app_id", "bll8iq97cem8" },
+                { "x-rpc-device_id", device_id },
+                { "Cookie", cookie } },
+            cpr::Timeout{ 10000 });
 
-    const auto j = nlohmann::json::parse(response.text, nullptr, false);
-    if (j.is_discarded())
-    {
-        return false;
+        if (!response.error && response.status_code == 200 && !response.text.empty())
+        {
+            const auto j = nlohmann::json::parse(response.text, nullptr, false);
+            if (!j.is_discarded() && j.value("retcode", -1) == 0)
+            {
+                return true;
+            }
+        }
+        if (attempt < 2)
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
     }
-
-    const int retcode = j.value("retcode", -1);
-    return retcode == 0;
+    return false;
 }
 
 inline bool ScanPassportQRLogin(
@@ -621,11 +629,33 @@ inline ScanRet scanConfirm(const std::string& ticket, const std::string& uid, co
     std::cout << postBody.dump() << std::endl;
 #endif
 
-    const auto response = cpr::Post(
-        cpr::Url{ api::mhy::bh3::qrcode_confirm },
-        cpr::Header{ { "Content-Type", "application/json" } },
-        cpr::Body{ postBody.dump() });
+    // 加超时 + 异常保护 + 失败重试(最多2次), 避免确认请求挂起/解析异常导致卡住
+    for (int attempt = 0; attempt < 2; ++attempt)
+    {
+        const auto response = cpr::Post(
+            cpr::Url{ api::mhy::bh3::qrcode_confirm },
+            cpr::Header{ { "Content-Type", "application/json" } },
+            cpr::Body{ postBody.dump() },
+            cpr::Timeout{ 10000 });
 
-    const auto j = nlohmann::json::parse(response.text);
-    return j.value("retcode", -1) == 0 ? ScanRet::SUCCESS : ScanRet::FAILURE_2;
+        if (!response.error && response.status_code == 200 && !response.text.empty())
+        {
+            try
+            {
+                const auto j = nlohmann::json::parse(response.text);
+                if (j.value("retcode", -1) == 0)
+                {
+                    return ScanRet::SUCCESS;
+                }
+            }
+            catch (const std::exception&)
+            {
+            }
+        }
+        if (attempt < 1)
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+    return ScanRet::FAILURE_2;
 }
