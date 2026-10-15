@@ -143,7 +143,9 @@ void QRCodeForScreen::LoginOfficial()
                 DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + " 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
                 if (diagTick == 30)
                 {
-                    const std::string shotPath = std::string(std::getenv("TEMP")) + "\\mhy_screen_shot.png";
+                    char tempPath[MAX_PATH];
+                    const DWORD tempLen = GetEnvironmentVariableA("TEMP", tempPath, MAX_PATH);
+                    const std::string shotPath = std::string(tempLen > 0 ? tempPath : ".") + "\\mhy_screen_shot.png";
                     cv::imwrite(shotPath, img);
                     DebugLog::Log("[QRCodeForScreen] 已保存屏幕截图: " + shotPath);
                 }
@@ -286,7 +288,9 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + " 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
                 if (diagTick == 30)
                 {
-                    const std::string shotPath = std::string(std::getenv("TEMP")) + "\\mhy_screen_shot.png";
+                    char tempPath[MAX_PATH];
+                    const DWORD tempLen = GetEnvironmentVariableA("TEMP", tempPath, MAX_PATH);
+                    const std::string shotPath = std::string(tempLen > 0 ? tempPath : ".") + "\\mhy_screen_shot.png";
                     cv::imwrite(shotPath, img);
                     DebugLog::Log("[QRCodeForScreen] 已保存屏幕截图: " + shotPath);
                 }
