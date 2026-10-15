@@ -285,6 +285,35 @@ public:
     }
 
     /*
+	 * @brief 枚举可用的显示器输出数量(含虚拟/远程屏)
+	 */
+    static int GetOutputCount()
+    {
+        IDXGIFactory1* factory{ nullptr };
+        if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
+        {
+            return 0;
+        }
+        int count = 0;
+        IDXGIAdapter1* adapter = nullptr;
+        for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
+        {
+            IDXGIOutput* output = nullptr;
+            for (UINT j = 0; adapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND; ++j)
+            {
+                ++count;
+                output->Release();
+                output = nullptr;
+            }
+            adapter->Release();
+            adapter = nullptr;
+            break; // 与监视逻辑一致, 只枚举第一个显卡适配器
+        }
+        factory->Release();
+        return count;
+    }
+
+    /*
 	 * @brief Get
 	 * @param timeout
 	 * @return 0

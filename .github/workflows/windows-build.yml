@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
     tags: ["v*"]
   workflow_dispatch:
+# 同一分支新推送自动取消旧构建, 避免重复跑
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 env:
   BUILD_CONFIGURATION: Release
   INSTALL_DIR: ${{ github.workspace }}\install
