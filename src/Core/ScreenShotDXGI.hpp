@@ -114,157 +114,128 @@ public:
             m_DeskDupl->Release();
             m_DeskDupl = nullptr;
         }
+        if (m_Device)
+        {
+            m_Device->Release();
+            m_Device = nullptr;
+        }
         m_DeskDupl_state = false;
         m_monitorIdx = monitorIdx;
-        HRESULT hr = S_FALSE;
-        // Get DXGI device
-        IDXGIDevice* DxgiDevice = nullptr;
-        hr = m_Device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&DxgiDevice));
-        if (FAILED(hr))
+
+        // 跨所有适配器(物理显卡+UU/向日葵/MuMu等虚拟显示适配器)按全局输出序号查找,
+        // 找到目标输出后为该适配器创建设备并创建桌面复制
+        IDXGIFactory1* factory = nullptr;
+        if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
         {
             return false;
         }
-
-        // Get DXGI adapter
-        IDXGIAdapter* DxgiAdapter = nullptr;
-        hr = DxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&DxgiAdapter));
-        DxgiDevice->Release();
-        DxgiDevice = nullptr;
-        if (FAILED(hr))
+        IDXGIAdapter1* adapter = nullptr;
+        UINT globalOut = 0;
+        for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a)
         {
-            return false;
-        }
-
-        // Get output
-        IDXGIOutput* DxgiOutput = nullptr;
-        hr = DxgiAdapter->EnumOutputs(m_monitorIdx, &DxgiOutput);
-        DxgiAdapter->Release();
-        DxgiAdapter = nullptr;
-        if (FAILED(hr))
-        {
-            return false;
-        }
-
-        // QI for Output 1
-        IDXGIOutput1* DxgiOutput1 = nullptr;
-        hr = DxgiOutput->QueryInterface(__uuidof(DxgiOutput1), reinterpret_cast<void**>(&DxgiOutput1));
-
-        DxgiOutput->Release();
-        DxgiOutput = nullptr;
-
-        if (FAILED(hr))
-        {
-            return false;
-        }
-
-        // Create desktop duplication
-        hr = DxgiOutput1->DuplicateOutput(m_Device, &m_DeskDupl);
-        DxgiOutput1->Release();
-        DxgiOutput1 = nullptr;
-
-        if (FAILED(hr))
-        {
-            if (hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
+            DXGI_ADAPTER_DESC1 adesc{};
+            adapter->GetDesc1(&adesc);
+            if (adesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
             {
-                //WRITELOG("DXGI_ERROR_NOT_CURRENTLY_AVAILABLE");
-            }
-            //切换屏幕创建duplication失败时触发的错误
-            //char log[100];
-            //sprintf_s(log, "[0x%08X]: DxgiOutput1->DuplicateOutput failed.", hr);
-            //WRITELOG(log);
-            //LOGE("[0x%08X]: DxgiOutput1->DuplicateOutput failed.", hr);
-
-            return false;
-        }
-
-        DXGI_OUTDUPL_DESC outDuplDesc;
-        m_DeskDupl->GetDesc(&outDuplDesc);
-
-        duplWidth = outDuplDesc.ModeDesc.Width;
-        duplHeight = outDuplDesc.ModeDesc.Height;
-
-        m_DeskDupl_state = true;
-
-        //this->showMonitorInfos();
-        return true;
-    }
-
-    /*
-	 * @brief 自动选择可用的显示器输出(适配虚拟显示器/远程控制屏幕, 如UU远程超级屏)
-	 * @return 是否成功
-	 */
-    bool InitDuplAuto(int& duplWidth, int& duplHeight)
-    {
-        // 释放旧资源
-        if (m_AcquiredDesktopImage)
-        {
-            m_AcquiredDesktopImage->Release();
-            m_AcquiredDesktopImage = nullptr;
-        }
-        if (m_AcquiredDesktopImage_copy)
-        {
-            m_AcquiredDesktopImage_copy->Release();
-            m_AcquiredDesktopImage_copy = nullptr;
-        }
-        if (m_DeskDupl)
-        {
-            m_DeskDupl->Release();
-            m_DeskDupl = nullptr;
-        }
-        m_DeskDupl_state = false;
-
-        HRESULT hr = S_FALSE;
-        IDXGIDevice* DxgiDevice = nullptr;
-        hr = m_Device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&DxgiDevice));
-        if (FAILED(hr))
-        {
-            return false;
-        }
-        IDXGIAdapter* DxgiAdapter = nullptr;
-        hr = DxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&DxgiAdapter));
-        DxgiDevice->Release();
-        DxgiDevice = nullptr;
-        if (FAILED(hr))
-        {
-            return false;
-        }
-
-        // 遍历所有输出(主屏/副屏/虚拟显示器), 选第一个能成功创建桌面复制(Desktop Duplication)的
-        for (UINT i = 0;; ++i)
-        {
-            IDXGIOutput* DxgiOutput = nullptr;
-            hr = DxgiAdapter->EnumOutputs(i, &DxgiOutput);
-            if (FAILED(hr))
-            {
-                break; // 没有更多输出了
-            }
-            IDXGIOutput1* DxgiOutput1 = nullptr;
-            hr = DxgiOutput->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void**>(&DxgiOutput1));
-            DxgiOutput->Release();
-            DxgiOutput = nullptr;
-            if (FAILED(hr))
-            {
+                adapter->Release();
+                adapter = nullptr;
                 continue;
             }
-            IDXGIOutputDuplication* dupl = nullptr;
-            hr = DxgiOutput1->DuplicateOutput(m_Device, &dupl);
-            DxgiOutput1->Release();
-            DxgiOutput1 = nullptr;
-            if (SUCCEEDED(hr))
+            // 统计该适配器的输出数量
+            UINT outCount = 0;
+            IDXGIOutput* tmpOut = nullptr;
+            while (adapter->EnumOutputs(outCount, &tmpOut) == S_OK)
             {
+                tmpOut->Release();
+                tmpOut = nullptr;
+                ++outCount;
+            }
+            if (monitorIdx < globalOut + outCount)
+            {
+                // 目标输出在本适配器上
+                const UINT localIdx = monitorIdx - globalOut;
+                ID3D11Device* dev = nullptr;
+                D3D_FEATURE_LEVEL levels[] = {
+                    D3D_FEATURE_LEVEL_11_0,
+                    D3D_FEATURE_LEVEL_10_1,
+                    D3D_FEATURE_LEVEL_10_0,
+                    D3D_FEATURE_LEVEL_9_1
+                };
+                D3D_FEATURE_LEVEL fl;
+                HRESULT hr = D3D11CreateDevice(
+                    adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, ARRAYSIZE(levels),
+                    D3D11_SDK_VERSION, &dev, &fl, nullptr);
+                if (FAILED(hr))
+                {
+                    adapter->Release();
+                    factory->Release();
+                    return false;
+                }
+                IDXGIDevice* dxgiDev = nullptr;
+                hr = dev->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgiDev));
+                IDXGIAdapter* devAdapter = nullptr;
+                if (SUCCEEDED(hr))
+                {
+                    hr = dxgiDev->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&devAdapter));
+                    dxgiDev->Release();
+                }
+                if (FAILED(hr))
+                {
+                    dev->Release();
+                    adapter->Release();
+                    factory->Release();
+                    return false;
+                }
+                IDXGIOutput* output = nullptr;
+                hr = devAdapter->EnumOutputs(localIdx, &output);
+                if (FAILED(hr))
+                {
+                    dev->Release();
+                    devAdapter->Release();
+                    adapter->Release();
+                    factory->Release();
+                    return false;
+                }
+                IDXGIOutput1* output1 = nullptr;
+                hr = output->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void**>(&output1));
+                output->Release();
+                if (FAILED(hr))
+                {
+                    dev->Release();
+                    devAdapter->Release();
+                    adapter->Release();
+                    factory->Release();
+                    return false;
+                }
+                IDXGIOutputDuplication* dupl = nullptr;
+                hr = output1->DuplicateOutput(dev, &dupl);
+                output1->Release();
+                if (FAILED(hr))
+                {
+                    dev->Release();
+                    devAdapter->Release();
+                    adapter->Release();
+                    factory->Release();
+                    return false;
+                }
+                m_Device = dev;
                 m_DeskDupl = dupl;
-                m_monitorIdx = i;
                 DXGI_OUTDUPL_DESC outDuplDesc;
                 m_DeskDupl->GetDesc(&outDuplDesc);
                 duplWidth = outDuplDesc.ModeDesc.Width;
                 duplHeight = outDuplDesc.ModeDesc.Height;
                 m_DeskDupl_state = true;
-                DxgiAdapter->Release();
+                devAdapter->Release();
+                adapter->Release();
+                factory->Release();
                 return true;
             }
-            // 该输出无法复制(可能是远程/虚拟输出), 继续试下一个
+            globalOut += outCount;
+            adapter->Release();
+            adapter = nullptr;
         }
-        DxgiAdapter->Release();
+        factory->Release();
         return false;
     }
 
@@ -285,7 +256,7 @@ public:
     }
 
     /*
-	 * @brief 枚举可用的显示器输出数量(含虚拟/远程屏)
+	 * @brief 枚举可用的显示器输出数量(所有适配器: 物理显卡+虚拟显示适配器)
 	 */
     static int GetOutputCount()
     {
@@ -298,16 +269,20 @@ public:
         IDXGIAdapter1* adapter = nullptr;
         for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i)
         {
-            IDXGIOutput* output = nullptr;
-            for (UINT j = 0; adapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND; ++j)
+            DXGI_ADAPTER_DESC1 adesc{};
+            adapter->GetDesc1(&adesc);
+            if (!(adesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE))
             {
-                ++count;
-                output->Release();
-                output = nullptr;
+                IDXGIOutput* output = nullptr;
+                for (UINT j = 0; adapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND; ++j)
+                {
+                    ++count;
+                    output->Release();
+                    output = nullptr;
+                }
             }
             adapter->Release();
             adapter = nullptr;
-            break; // 与监视逻辑一致, 只枚举第一个显卡适配器
         }
         factory->Release();
         return count;
