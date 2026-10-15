@@ -10,6 +10,8 @@ env:
   INSTALL_DIR: ${{ github.workspace }}\install
   ZIP_NAME: MHY_Scanner_${{ github.ref_name }}.zip
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
+  # 清华镜像作为 vcpkg 源码下载源, 避免 GitHub 下载失败(zlib 等)
+  X_VCPKG_ASSET_SOURCES: "x-azurl,https://mirrors.tuna.tsinghua.edu.cn/github-release/microsoft/vcpkg/downloads/,readwrite"
 
 permissions:
   contents: write
