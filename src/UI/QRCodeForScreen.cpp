@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#include <cstdlib>
 #include <Windows.h>
+#include <opencv2/imgcodecs.hpp>
 
 #include "Logger.hpp"
 
@@ -88,6 +90,7 @@ void QRCodeForScreen::LoginOfficial()
     }
 
     // 每个输出独立缓冲与等比缩放比例
+    int diagTick = 0;
     std::vector<uint8_t*> buffers;
     std::vector<double> scales;
     for (size_t i = 0; i < captures.size(); ++i)
@@ -133,6 +136,18 @@ void QRCodeForScreen::LoginOfficial()
             cv::imshow("Video_Stream", img);
             cv::waitKey(1);
 #endif
+            // ===== 诊断(临时): 输出内容检测, 判断是否黑屏/抓到真实画面 =====
+            if (++diagTick % 30 == 0)
+            {
+                const cv::Scalar meanVal = cv::mean(img);
+                DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + " 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
+                if (diagTick == 30)
+                {
+                    const std::string shotPath = std::string(std::getenv("TEMP")) + "\\mhy_screen_shot.png";
+                    cv::imwrite(shotPath, img);
+                    DebugLog::Log("[QRCodeForScreen] 已保存屏幕截图: " + shotPath);
+                }
+            }
             threadPool.tryStart([&, img = std::move(img)]() {
                 thread_local QRScanner qrScanners;
                 std::string str;
@@ -218,6 +233,7 @@ void QRCodeForScreen::LoginBH3BiliBili()
     }
 
     // 每个输出独立缓冲与等比缩放比例
+    int diagTick = 0;
     std::vector<uint8_t*> buffers;
     std::vector<double> scales;
     for (size_t i = 0; i < captures.size(); ++i)
@@ -263,6 +279,18 @@ void QRCodeForScreen::LoginBH3BiliBili()
             cv::imshow("Video_Stream", img);
             cv::waitKey(1);
 #endif
+            // ===== 诊断(临时): 输出内容检测, 判断是否黑屏/抓到真实画面 =====
+            if (++diagTick % 30 == 0)
+            {
+                const cv::Scalar meanVal = cv::mean(img);
+                DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + " 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
+                if (diagTick == 30)
+                {
+                    const std::string shotPath = std::string(std::getenv("TEMP")) + "\\mhy_screen_shot.png";
+                    cv::imwrite(shotPath, img);
+                    DebugLog::Log("[QRCodeForScreen] 已保存屏幕截图: " + shotPath);
+                }
+            }
             threadPool.tryStart([&, img = std::move(img)]() {
                 thread_local QRScanner qrScanners;
                 std::string str;
