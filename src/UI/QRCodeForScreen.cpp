@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <thread>
+#include <algorithm>
 
 #include <QFuture>
 #include <QtConcurrent/QtConcurrent>
@@ -62,12 +63,15 @@ void QRCodeForScreen::LoginOfficial()
     screenshotdxgi.InitDupl(0, w, h);
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
+    // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
+    const double scale = std::min(1280.0 / w, 720.0 / h);
     while (m_stop.load())
     {
         screenshotdxgi.getFrame(100);
         screenshotdxgi.copyFrameToBuffer(&mBuffer, mBufferSize);
         cv::Mat img;
-        cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img, { 1280, 720 });
+        cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img,
+                   cv::Size(static_cast<int>(w * scale), static_cast<int>(h * scale)));
 #ifndef SHOW
         cv::imshow("Video_Stream", img);
         cv::waitKey(1);
@@ -133,12 +137,15 @@ void QRCodeForScreen::LoginBH3BiliBili()
     screenshotdxgi.InitDupl(0, w, h);
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
+    // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
+    const double scale = std::min(1280.0 / w, 720.0 / h);
     while (m_stop.load())
     {
         screenshotdxgi.getFrame(100);
         screenshotdxgi.copyFrameToBuffer(&mBuffer, mBufferSize);
         cv::Mat img;
-        cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img, { 1280, 720 });
+        cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img,
+                   cv::Size(static_cast<int>(w * scale), static_cast<int>(h * scale)));
 #ifndef SHOW
         cv::imshow("Video_Stream", img);
         cv::waitKey(1);
