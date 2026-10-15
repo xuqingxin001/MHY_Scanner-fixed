@@ -3,6 +3,9 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <Windows.h>
+
+#include "Logger.hpp"
 
 #include <QFuture>
 #include <QtConcurrent/QtConcurrent>
@@ -64,9 +67,27 @@ void QRCodeForScreen::LoginOfficial()
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
     // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
-    const double scale = std::min(1280.0 / w, 720.0 / h);
+    double scale = std::min(1280.0 / w, 720.0 / h);
     while (m_stop.load())
     {
+        // 分辨率自适应: 桌面分辨率变化时自动重新初始化, 运行中改分辨率也能继续扫
+        const int sw = GetSystemMetrics(SM_CXSCREEN);
+        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        if (sw != w || sh != h)
+        {
+            if (screenshotdxgi.InitDevice() && screenshotdxgi.InitDupl(0, w, h))
+            {
+                mBufferSize = w * h * 4;
+                delete[] mBuffer;
+                mBuffer = new UCHAR[mBufferSize];
+                scale = std::min(1280.0 / w, 720.0 / h);
+                DebugLog::Log("[QRCodeForScreen] 桌面分辨率变化, 已自适应重新初始化: " + std::to_string(w) + "x" + std::to_string(h));
+            }
+            else
+            {
+                DebugLog::Log("[QRCodeForScreen] 分辨率变化重初始化失败, 下帧重试");
+            }
+        }
         screenshotdxgi.getFrame(100);
         screenshotdxgi.copyFrameToBuffer(&mBuffer, mBufferSize);
         cv::Mat img;
@@ -138,9 +159,27 @@ void QRCodeForScreen::LoginBH3BiliBili()
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
     // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
-    const double scale = std::min(1280.0 / w, 720.0 / h);
+    double scale = std::min(1280.0 / w, 720.0 / h);
     while (m_stop.load())
     {
+        // 分辨率自适应: 桌面分辨率变化时自动重新初始化, 运行中改分辨率也能继续扫
+        const int sw = GetSystemMetrics(SM_CXSCREEN);
+        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        if (sw != w || sh != h)
+        {
+            if (screenshotdxgi.InitDevice() && screenshotdxgi.InitDupl(0, w, h))
+            {
+                mBufferSize = w * h * 4;
+                delete[] mBuffer;
+                mBuffer = new UCHAR[mBufferSize];
+                scale = std::min(1280.0 / w, 720.0 / h);
+                DebugLog::Log("[QRCodeForScreen] 桌面分辨率变化, 已自适应重新初始化: " + std::to_string(w) + "x" + std::to_string(h));
+            }
+            else
+            {
+                DebugLog::Log("[QRCodeForScreen] 分辨率变化重初始化失败, 下帧重试");
+            }
+        }
         screenshotdxgi.getFrame(100);
         screenshotdxgi.copyFrameToBuffer(&mBuffer, mBufferSize);
         cv::Mat img;

@@ -51,6 +51,11 @@ public:
 	 */
     bool InitDevice()
     {
+        if (m_Device)
+        {
+            m_Device->Release();
+            m_Device = nullptr;
+        }
         ChooseAdapter();
 
         HRESULT hr{ S_OK };
@@ -93,6 +98,23 @@ public:
 
     bool InitDupl(UINT monitorIdx, int& duplWidth, int& duplHeight)
     {
+        // 释放旧资源, 支持运行中分辨率变化后重新初始化
+        if (m_AcquiredDesktopImage)
+        {
+            m_AcquiredDesktopImage->Release();
+            m_AcquiredDesktopImage = nullptr;
+        }
+        if (m_AcquiredDesktopImage_copy)
+        {
+            m_AcquiredDesktopImage_copy->Release();
+            m_AcquiredDesktopImage_copy = nullptr;
+        }
+        if (m_DeskDupl)
+        {
+            m_DeskDupl->Release();
+            m_DeskDupl = nullptr;
+        }
+        m_DeskDupl_state = false;
         m_monitorIdx = monitorIdx;
         HRESULT hr = S_FALSE;
         // Get DXGI device
