@@ -63,19 +63,22 @@ void QRCodeForScreen::LoginOfficial()
     int w{ 0 };
     int h{ 0 };
     screenshotdxgi.InitDevice();
-    screenshotdxgi.InitDupl(0, w, h);
+    if (!screenshotdxgi.InitDuplAuto(w, h))
+    {
+        DebugLog::Log("[QRCodeForScreen] 初始化失败: 未找到可复制的显示器输出(检查远程/虚拟屏占用)");
+    }
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
     // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
     double scale = std::min(1280.0 / w, 720.0 / h);
     while (m_stop.load())
     {
-        // 分辨率自适应: 桌面分辨率变化时自动重新初始化, 运行中改分辨率也能继续扫
-        const int sw = GetSystemMetrics(SM_CXSCREEN);
-        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        // 分辨率自适应: 输出尺寸变化时自动重新初始化(含远程/虚拟屏), 运行中改分辨率也能继续扫
+        int sw{ 0 }, sh{ 0 };
+        screenshotdxgi.GetOutputSize(sw, sh);
         if (sw != w || sh != h)
         {
-            if (screenshotdxgi.InitDevice() && screenshotdxgi.InitDupl(0, w, h))
+            if (screenshotdxgi.InitDevice() && screenshotdxgi.InitDuplAuto(w, h))
             {
                 mBufferSize = w * h * 4;
                 delete[] mBuffer;
@@ -155,19 +158,22 @@ void QRCodeForScreen::LoginBH3BiliBili()
     int w{ 0 };
     int h{ 0 };
     screenshotdxgi.InitDevice();
-    screenshotdxgi.InitDupl(0, w, h);
+    if (!screenshotdxgi.InitDuplAuto(w, h))
+    {
+        DebugLog::Log("[QRCodeForScreen] 初始化失败: 未找到可复制的显示器输出(检查远程/虚拟屏占用)");
+    }
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
     // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
     double scale = std::min(1280.0 / w, 720.0 / h);
     while (m_stop.load())
     {
-        // 分辨率自适应: 桌面分辨率变化时自动重新初始化, 运行中改分辨率也能继续扫
-        const int sw = GetSystemMetrics(SM_CXSCREEN);
-        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        // 分辨率自适应: 输出尺寸变化时自动重新初始化(含远程/虚拟屏), 运行中改分辨率也能继续扫
+        int sw{ 0 }, sh{ 0 };
+        screenshotdxgi.GetOutputSize(sw, sh);
         if (sw != w || sh != h)
         {
-            if (screenshotdxgi.InitDevice() && screenshotdxgi.InitDupl(0, w, h))
+            if (screenshotdxgi.InitDevice() && screenshotdxgi.InitDuplAuto(w, h))
             {
                 mBufferSize = w * h * 4;
                 delete[] mBuffer;

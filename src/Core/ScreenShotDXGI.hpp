@@ -190,6 +190,101 @@ public:
     }
 
     /*
+	 * @brief 自动选择可用的显示器输出(适配虚拟显示器/远程控制屏幕, 如UU远程超级屏)
+	 * @return 是否成功
+	 */
+    bool InitDuplAuto(int& duplWidth, int& duplHeight)
+    {
+        // 释放旧资源
+        if (m_AcquiredDesktopImage)
+        {
+            m_AcquiredDesktopImage->Release();
+            m_AcquiredDesktopImage = nullptr;
+        }
+        if (m_AcquiredDesktopImage_copy)
+        {
+            m_AcquiredDesktopImage_copy->Release();
+            m_AcquiredDesktopImage_copy = nullptr;
+        }
+        if (m_DeskDupl)
+        {
+            m_DeskDupl->Release();
+            m_DeskDupl = nullptr;
+        }
+        m_DeskDupl_state = false;
+
+        HRESULT hr = S_FALSE;
+        IDXGIDevice* DxgiDevice = nullptr;
+        hr = m_Device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&DxgiDevice));
+        if (FAILED(hr))
+        {
+            return false;
+        }
+        IDXGIAdapter* DxgiAdapter = nullptr;
+        hr = DxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&DxgiAdapter));
+        DxgiDevice->Release();
+        DxgiDevice = nullptr;
+        if (FAILED(hr))
+        {
+            return false;
+        }
+
+        // 遍历所有输出(主屏/副屏/虚拟显示器), 选第一个能成功创建桌面复制(Desktop Duplication)的
+        for (UINT i = 0;; ++i)
+        {
+            IDXGIOutput* DxgiOutput = nullptr;
+            hr = DxgiAdapter->EnumOutputs(i, &DxgiOutput);
+            if (FAILED(hr))
+            {
+                break; // 没有更多输出了
+            }
+            IDXGIOutput1* DxgiOutput1 = nullptr;
+            hr = DxgiOutput->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void**>(&DxgiOutput1));
+            DxgiOutput->Release();
+            DxgiOutput = nullptr;
+            if (FAILED(hr))
+            {
+                continue;
+            }
+            IDXGIOutputDuplication* dupl = nullptr;
+            hr = DxgiOutput1->DuplicateOutput(m_Device, &dupl);
+            DxgiOutput1->Release();
+            DxgiOutput1 = nullptr;
+            if (SUCCEEDED(hr))
+            {
+                m_DeskDupl = dupl;
+                m_monitorIdx = i;
+                DXGI_OUTDUPL_DESC outDuplDesc;
+                m_DeskDupl->GetDesc(&outDuplDesc);
+                duplWidth = outDuplDesc.ModeDesc.Width;
+                duplHeight = outDuplDesc.ModeDesc.Height;
+                m_DeskDupl_state = true;
+                DxgiAdapter->Release();
+                return true;
+            }
+            // 该输出无法复制(可能是远程/虚拟输出), 继续试下一个
+        }
+        DxgiAdapter->Release();
+        return false;
+    }
+
+    /*
+	 * @brief 获取当前正在复制的显示器输出尺寸
+	 */
+    bool GetOutputSize(int& ow, int& oh)
+    {
+        if (!m_DeskDupl)
+        {
+            return false;
+        }
+        DXGI_OUTDUPL_DESC outDuplDesc;
+        m_DeskDupl->GetDesc(&outDuplDesc);
+        ow = outDuplDesc.ModeDesc.Width;
+        oh = outDuplDesc.ModeDesc.Height;
+        return true;
+    }
+
+    /*
 	 * @brief Get
 	 * @param timeout
 	 * @return 0
