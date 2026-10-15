@@ -34,7 +34,24 @@ inline void Log(const std::string& msg)
     std::lock_guard lock(LogMutex());
     try
     {
-        std::ofstream f(GetLogPath(), std::ios::app);
+        const std::string path = GetLogPath();
+        // 日志文件超过上限自动截断, 防止无限膨胀
+        constexpr long long kMaxLogSize = 5LL * 1024 * 1024; // 5MB
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(path, ec);
+        if (!ec && size > kMaxLogSize)
+        {
+            std::ofstream fresh(path, std::ios::trunc);
+            const auto now = std::chrono::system_clock::now();
+            const auto t = std::chrono::system_clock::to_time_t(now);
+            std::tm tm{};
+            localtime_s(&tm, &t);
+            char buf[32]{};
+            std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
+            fresh << "[" << buf << "] [Logger] 日志文件超过5MB, 已自动截断\n";
+            fresh.flush();
+        }
+        std::ofstream f(path, std::ios::app);
         if (!f)
         {
             return;
