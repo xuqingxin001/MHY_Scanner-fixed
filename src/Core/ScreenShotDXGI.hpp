@@ -362,6 +362,10 @@ public:
 
     bool copyFrameToBuffer(BYTE** buffer, long bufferSize)
     {
+        if (!m_AcquiredDesktopImage)
+        {
+            return false; // 无有效帧时直接返回, 防止空指针崩溃
+        }
         HRESULT hr;
         ID3D11DeviceContext* context;
         m_Device->GetImmediateContext(&context);

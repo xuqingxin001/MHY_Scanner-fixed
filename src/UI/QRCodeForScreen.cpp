@@ -65,7 +65,12 @@ void QRCodeForScreen::LoginOfficial()
     screenshotdxgi.InitDevice();
     if (!screenshotdxgi.InitDuplAuto(w, h))
     {
-        DebugLog::Log("[QRCodeForScreen] 初始化失败: 未找到可复制的显示器输出(检查远程/虚拟屏占用)");
+        DebugLog::Log("[QRCodeForScreen] 初始化失败: 未找到可复制的显示器输出(检查远程/虚拟屏占用), 将自动重试");
+    }
+    if (w == 0 || h == 0)
+    {
+        w = 1920;
+        h = 1080; // 兜底尺寸, 防止分配0字节缓冲或除零, 循环内会自动重新初始化
     }
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
@@ -91,7 +96,10 @@ void QRCodeForScreen::LoginOfficial()
                 DebugLog::Log("[QRCodeForScreen] 分辨率变化重初始化失败, 下帧重试");
             }
         }
-        screenshotdxgi.getFrame(100);
+        if (screenshotdxgi.getFrame(100) != 0)
+        {
+            continue; // 无新帧或复制异常, 跳过本次(防止空指针崩溃)
+        }
         screenshotdxgi.copyFrameToBuffer(&mBuffer, mBufferSize);
         cv::Mat img;
         cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img,
@@ -160,7 +168,12 @@ void QRCodeForScreen::LoginBH3BiliBili()
     screenshotdxgi.InitDevice();
     if (!screenshotdxgi.InitDuplAuto(w, h))
     {
-        DebugLog::Log("[QRCodeForScreen] 初始化失败: 未找到可复制的显示器输出(检查远程/虚拟屏占用)");
+        DebugLog::Log("[QRCodeForScreen] 初始化失败: 未找到可复制的显示器输出(检查远程/虚拟屏占用), 将自动重试");
+    }
+    if (w == 0 || h == 0)
+    {
+        w = 1920;
+        h = 1080; // 兜底尺寸, 防止分配0字节缓冲或除零, 循环内会自动重新初始化
     }
     long mBufferSize = w * h * 4;
     uint8_t* mBuffer = new UCHAR[mBufferSize];
@@ -186,7 +199,10 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 DebugLog::Log("[QRCodeForScreen] 分辨率变化重初始化失败, 下帧重试");
             }
         }
-        screenshotdxgi.getFrame(100);
+        if (screenshotdxgi.getFrame(100) != 0)
+        {
+            continue; // 无新帧或复制异常, 跳过本次(防止空指针崩溃)
+        }
         screenshotdxgi.copyFrameToBuffer(&mBuffer, mBufferSize);
         cv::Mat img;
         cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img,
