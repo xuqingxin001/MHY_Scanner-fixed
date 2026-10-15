@@ -21,6 +21,47 @@
 
 #define DELAYED 200
 
+// GDI 屏幕捕获(BitBlt): DXGI桌面复制在UU超级屏等虚拟显示器上返回损坏的条纹帧,
+// GDI方式在虚拟屏下能抓到真实画面, 用于替代DXGI
+static bool CaptureScreenGDI(uint8_t* buffer, int width, int height)
+{
+    HDC hdcScreen = GetDC(nullptr);
+    if (!hdcScreen)
+    {
+        return false;
+    }
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
+    if (!hBitmap)
+    {
+        DeleteDC(hdcMem);
+        ReleaseDC(nullptr, hdcScreen);
+        return false;
+    }
+    HGDIOBJ hOld = SelectObject(hdcMem, hBitmap);
+    if (!BitBlt(hdcMem, 0, 0, width, height, hdcScreen, 0, 0, SRCCOPY | CAPTUREBLT))
+    {
+        SelectObject(hdcMem, hOld);
+        DeleteObject(hBitmap);
+        DeleteDC(hdcMem);
+        ReleaseDC(nullptr, hdcScreen);
+        return false;
+    }
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height; // 自顶向下, BGRA
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    GetDIBits(hdcMem, hBitmap, 0, static_cast<UINT>(height), buffer, &bmi, DIB_RGB_COLORS);
+    SelectObject(hdcMem, hOld);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(nullptr, hdcScreen);
+    return true;
+}
+
 QRCodeForScreen::QRCodeForScreen(QObject* parent) :
     QThread(parent),
     m_stop(false)
@@ -63,144 +104,103 @@ void QRCodeForScreen::LoginOfficial()
     QThreadPool threadPool;
     threadPool.setMaxThreadCount(threadNumber);
     std::mutex mtx;
-    // ===== 多屏自我识别: 枚举所有可复制的显示器输出, 每个输出独立捕获, 二维码在哪个屏幕都能扫到 =====
-    std::vector<std::unique_ptr<ScreenShotDXGI>> captures;
-    std::vector<int> capsW, capsH;
-    const int outCount = ScreenShotDXGI::GetOutputCount();
-    for (int idx = 0; idx < outCount; ++idx)
-    {
-        auto cap = std::make_unique<ScreenShotDXGI>();
-        int cw{ 0 }, ch{ 0 };
-        cap->InitDevice();
-        if (cap->InitDupl(static_cast<UINT>(idx), cw, ch))
-        {
-            captures.push_back(std::move(cap));
-            capsW.push_back(cw);
-            capsH.push_back(ch);
-            DebugLog::Log("[QRCodeForScreen] 监视输出" + std::to_string(idx) + ": " + std::to_string(cw) + "x" + std::to_string(ch));
-        }
-        else
-        {
-            DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(idx) + "无法复制, 跳过");
-        }
-    }
-    if (captures.empty())
-    {
-        DebugLog::Log("[QRCodeForScreen] 未找到可复制的显示器输出(检查远程/虚拟屏占用)");
-    }
 
-    // 每个输出独立缓冲与等比缩放比例
+    // ===== GDI 屏幕捕获(替代DXGI, 兼容UU超级屏等虚拟显示器: DXGI桌面复制在虚拟屏返回损坏帧) =====
+    int w = GetSystemMetrics(SM_CXSCREEN);
+    int h = GetSystemMetrics(SM_CYSCREEN);
+    long mBufferSize = w * h * 4;
+    uint8_t* mBuffer = new UCHAR[mBufferSize];
+    // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
+    double scale = std::min(1280.0 / w, 720.0 / h);
+    DebugLog::Log("[QRCodeForScreen] GDI捕获初始化: " + std::to_string(w) + "x" + std::to_string(h));
     int diagTick = 0;
-    std::vector<uint8_t*> buffers;
-    std::vector<double> scales;
-    for (size_t i = 0; i < captures.size(); ++i)
-    {
-        buffers.push_back(new UCHAR[capsW[i] * capsH[i] * 4]);
-        scales.push_back(std::min(1280.0 / capsW[i], 720.0 / capsH[i]));
-    }
 
     while (m_stop.load())
     {
-        for (size_t i = 0; i < captures.size(); ++i)
+        // 分辨率自适应: 主屏尺寸变化时重新分配缓冲
+        const int sw = GetSystemMetrics(SM_CXSCREEN);
+        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        if (sw != w || sh != h)
         {
-            auto& cap = captures[i];
-            // 分辨率自适应: 输出尺寸变化时重新初始化
-            int sw{ 0 }, sh{ 0 };
-            cap->GetOutputSize(sw, sh);
-            if (sw != capsW[i] || sh != capsH[i])
-            {
-                if (cap->InitDevice() && cap->InitDupl(static_cast<UINT>(i), sw, sh))
-                {
-                    capsW[i] = sw;
-                    capsH[i] = sh;
-                    delete[] buffers[i];
-                    buffers[i] = new UCHAR[sw * sh * 4];
-                    scales[i] = std::min(1280.0 / sw, 720.0 / sh);
-                    DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + "尺寸变化, 已自适应: " + std::to_string(sw) + "x" + std::to_string(sh));
-                }
-                else
-                {
-                    DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + "重初始化失败, 下帧重试");
-                    continue;
-                }
-            }
-            if (cap->getFrame(100) != 0)
-            {
-                continue; // 无新帧或复制异常, 跳过(防止空指针崩溃)
-            }
-            cap->copyFrameToBuffer(&buffers[i], capsW[i] * capsH[i] * 4);
-            cv::Mat img;
-            cv::resize(cv::Mat(capsH[i], capsW[i], CV_8UC4, buffers[i]), img,
-                       cv::Size(static_cast<int>(capsW[i] * scales[i]), static_cast<int>(capsH[i] * scales[i])));
+            w = sw;
+            h = sh;
+            mBufferSize = w * h * 4;
+            delete[] mBuffer;
+            mBuffer = new UCHAR[mBufferSize];
+            scale = std::min(1280.0 / w, 720.0 / h);
+            DebugLog::Log("[QRCodeForScreen] 分辨率变化, 已自适应: " + std::to_string(w) + "x" + std::to_string(h));
+        }
+        if (!CaptureScreenGDI(mBuffer, w, h))
+        {
+            continue; // GDI抓屏失败, 跳过
+        }
+        cv::Mat img;
+        cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img,
+                   cv::Size(static_cast<int>(w * scale), static_cast<int>(h * scale)));
 #ifndef SHOW
-            cv::imshow("Video_Stream", img);
-            cv::waitKey(1);
+        cv::imshow("Video_Stream", img);
+        cv::waitKey(1);
 #endif
-            // ===== 诊断(临时): 输出内容检测, 判断是否黑屏/抓到真实画面 =====
-            if (++diagTick % 30 == 0)
+        // ===== 诊断(临时): 输出内容检测, 判断是否黑屏/抓到真实画面 =====
+        if (++diagTick % 30 == 0)
+        {
+            const cv::Scalar meanVal = cv::mean(img);
+            DebugLog::Log("[QRCodeForScreen] 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
+            if (diagTick == 30)
             {
-                const cv::Scalar meanVal = cv::mean(img);
-                DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + " 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
-                if (diagTick == 30)
-                {
-                    char tempPath[MAX_PATH];
-                    const DWORD tempLen = GetEnvironmentVariableA("TEMP", tempPath, MAX_PATH);
-                    const std::string shotPath = std::string(tempLen > 0 ? tempPath : ".") + "\\mhy_screen_shot.png";
-                    cv::imwrite(shotPath, img);
-                    DebugLog::Log("[QRCodeForScreen] 已保存屏幕截图: " + shotPath);
-                }
+                char tempPath[MAX_PATH];
+                const DWORD tempLen = GetEnvironmentVariableA("TEMP", tempPath, MAX_PATH);
+                const std::string shotPath = std::string(tempLen > 0 ? tempPath : ".") + "\\mhy_screen_shot.png";
+                cv::imwrite(shotPath, img);
+                DebugLog::Log("[QRCodeForScreen] 已保存屏幕截图: " + shotPath);
             }
-            threadPool.tryStart([&, img = std::move(img)]() {
-                thread_local QRScanner qrScanners;
-                std::string str;
-                qrScanners.decodeSingle(img, str);
-                std::string ticket;
-                if (!parseOfficialQRCode(str, ticket))
+        }
+        threadPool.tryStart([&, img = std::move(img)]() {
+            thread_local QRScanner qrScanners;
+            std::string str;
+            qrScanners.decodeSingle(img, str);
+            std::string ticket;
+            if (!parseOfficialQRCode(str, ticket))
+            {
+                return;
+            }
+            if (lastTicket == ticket)
+            {
+                return;
+            }
+            if (mtx.try_lock())
+            {
+                if (!m_stop.load())
                 {
+                    mtx.unlock();
                     return;
                 }
-                if (lastTicket == ticket)
+                const std::string passportQrUrl = PandaScanQRCode(scanUrl, ticket, gameType);
+                if (!passportQrUrl.empty())
                 {
-                    return;
-                }
-                if (mtx.try_lock())
-                {
-                    if (!m_stop.load())
+                    lastTicket = ticket;
+                    lastQrCode = passportQrUrl;
+                    nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
+                    if (config["auto_login"])
                     {
-                        mtx.unlock();
-                        return;
-                    }
-                    const std::string passportQrUrl = PandaScanQRCode(scanUrl, ticket, gameType);
-                    if (!passportQrUrl.empty())
-                    {
-                        lastTicket = ticket;
-                        lastQrCode = passportQrUrl;
-                        nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
-                        if (config["auto_login"])
-                        {
-                            continueLastLogin();
-                        }
-                        else
-                        {
-                            emit loginConfirm(gameType, true);
-                        }
+                        continueLastLogin();
                     }
                     else
                     {
-                        emit loginResults(ScanRet::FAILURE_1);
+                        emit loginConfirm(gameType, true);
                     }
-                    stop();
-                    mtx.unlock();
                 }
-            });
-            cap->doneWithFrame();
-        }
+                else
+                {
+                    emit loginResults(ScanRet::FAILURE_1);
+                }
+                stop();
+                mtx.unlock();
+            }
+        });
         std::this_thread::sleep_for(std::chrono::milliseconds(DELAYED));
     }
-    for (auto* b : buffers)
-    {
-        delete[] b;
-    }
+    delete[] mBuffer;
 }
 
 void QRCodeForScreen::LoginBH3BiliBili()
@@ -208,84 +208,48 @@ void QRCodeForScreen::LoginBH3BiliBili()
     QThreadPool threadPool;
     threadPool.setMaxThreadCount(threadNumber);
     std::mutex mtx;
-    // ===== 多屏自我识别: 枚举所有可复制的显示器输出, 每个输出独立捕获, 二维码在哪个屏幕都能扫到 =====
-    std::vector<std::unique_ptr<ScreenShotDXGI>> captures;
-    std::vector<int> capsW, capsH;
-    const int outCount = ScreenShotDXGI::GetOutputCount();
-    for (int idx = 0; idx < outCount; ++idx)
-    {
-        auto cap = std::make_unique<ScreenShotDXGI>();
-        int cw{ 0 }, ch{ 0 };
-        cap->InitDevice();
-        if (cap->InitDupl(static_cast<UINT>(idx), cw, ch))
-        {
-            captures.push_back(std::move(cap));
-            capsW.push_back(cw);
-            capsH.push_back(ch);
-            DebugLog::Log("[QRCodeForScreen] 监视输出" + std::to_string(idx) + ": " + std::to_string(cw) + "x" + std::to_string(ch));
-        }
-        else
-        {
-            DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(idx) + "无法复制, 跳过");
-        }
-    }
-    if (captures.empty())
-    {
-        DebugLog::Log("[QRCodeForScreen] 未找到可复制的显示器输出(检查远程/虚拟屏占用)");
-    }
 
-    // 每个输出独立缓冲与等比缩放比例
+    // ===== GDI 屏幕捕获(替代DXGI, 兼容UU超级屏等虚拟显示器: DXGI桌面复制在虚拟屏返回损坏帧) =====
+    int w = GetSystemMetrics(SM_CXSCREEN);
+    int h = GetSystemMetrics(SM_CYSCREEN);
+    long mBufferSize = w * h * 4;
+    uint8_t* mBuffer = new UCHAR[mBufferSize];
+    // 等比缩放: 保持宽高比, 避免修改分辨率后二维码被拉伸变形无法识别
+    double scale = std::min(1280.0 / w, 720.0 / h);
+    DebugLog::Log("[QRCodeForScreen] GDI捕获初始化: " + std::to_string(w) + "x" + std::to_string(h));
     int diagTick = 0;
-    std::vector<uint8_t*> buffers;
-    std::vector<double> scales;
-    for (size_t i = 0; i < captures.size(); ++i)
-    {
-        buffers.push_back(new UCHAR[capsW[i] * capsH[i] * 4]);
-        scales.push_back(std::min(1280.0 / capsW[i], 720.0 / capsH[i]));
-    }
 
     while (m_stop.load())
     {
-        for (size_t i = 0; i < captures.size(); ++i)
+        // 分辨率自适应: 主屏尺寸变化时重新分配缓冲
+        const int sw = GetSystemMetrics(SM_CXSCREEN);
+        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        if (sw != w || sh != h)
         {
-            auto& cap = captures[i];
-            // 分辨率自适应: 输出尺寸变化时重新初始化
-            int sw{ 0 }, sh{ 0 };
-            cap->GetOutputSize(sw, sh);
-            if (sw != capsW[i] || sh != capsH[i])
-            {
-                if (cap->InitDevice() && cap->InitDupl(static_cast<UINT>(i), sw, sh))
-                {
-                    capsW[i] = sw;
-                    capsH[i] = sh;
-                    delete[] buffers[i];
-                    buffers[i] = new UCHAR[sw * sh * 4];
-                    scales[i] = std::min(1280.0 / sw, 720.0 / sh);
-                    DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + "尺寸变化, 已自适应: " + std::to_string(sw) + "x" + std::to_string(sh));
-                }
-                else
-                {
-                    DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + "重初始化失败, 下帧重试");
-                    continue;
-                }
-            }
-            if (cap->getFrame(100) != 0)
-            {
-                continue; // 无新帧或复制异常, 跳过(防止空指针崩溃)
-            }
-            cap->copyFrameToBuffer(&buffers[i], capsW[i] * capsH[i] * 4);
-            cv::Mat img;
-            cv::resize(cv::Mat(capsH[i], capsW[i], CV_8UC4, buffers[i]), img,
-                       cv::Size(static_cast<int>(capsW[i] * scales[i]), static_cast<int>(capsH[i] * scales[i])));
+            w = sw;
+            h = sh;
+            mBufferSize = w * h * 4;
+            delete[] mBuffer;
+            mBuffer = new UCHAR[mBufferSize];
+            scale = std::min(1280.0 / w, 720.0 / h);
+            DebugLog::Log("[QRCodeForScreen] 分辨率变化, 已自适应: " + std::to_string(w) + "x" + std::to_string(h));
+        }
+        if (!CaptureScreenGDI(mBuffer, w, h))
+        {
+            continue; // GDI抓屏失败, 跳过
+        }
+        cv::Mat img;
+        cv::resize(cv::Mat(h, w, CV_8UC4, mBuffer), img,
+                   cv::Size(static_cast<int>(w * scale), static_cast<int>(h * scale)));
 #ifndef SHOW
             cv::imshow("Video_Stream", img);
             cv::waitKey(1);
 #endif
-            // ===== 诊断(临时): 输出内容检测, 判断是否黑屏/抓到真实画面 =====
-            if (++diagTick % 30 == 0)
-            {
-                const cv::Scalar meanVal = cv::mean(img);
-                DebugLog::Log("[QRCodeForScreen] 输出" + std::to_string(i) + " 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
+        // ===== 诊断(临时): 输出内容检测, 判断是否黑屏/抓到真实画面 =====
+        if (++diagTick % 30 == 0)
+        {
+            const cv::Scalar meanVal = cv::mean(img);
+            DebugLog::Log("[QRCodeForScreen] 灰度均值: " + std::to_string(static_cast<int>(meanVal[0])));
                 if (diagTick == 30)
                 {
                     char tempPath[MAX_PATH];
@@ -335,15 +299,10 @@ void QRCodeForScreen::LoginBH3BiliBili()
                     stop();
                     mtx.unlock();
                 }
-            });
-            cap->doneWithFrame();
-        }
+        });
         std::this_thread::sleep_for(std::chrono::milliseconds(DELAYED));
     }
-    for (auto* b : buffers)
-    {
-        delete[] b;
-    }
+    delete[] mBuffer;
 }
 
 void QRCodeForScreen::continueLastLogin()
