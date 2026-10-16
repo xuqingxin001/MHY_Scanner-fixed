@@ -67,8 +67,9 @@ public:
         return false;
     }
 
-    [[nodiscard]] bool parseOfficialQRCode(const std::string_view qrCode, std::string& ticket)
+    [[nodiscard]] bool parseOfficialQRCode(const std::string_view qrCode, std::string& ticket, bool& isWebLogin)
     {
+        isWebLogin = false;
         ticket = getUrlQueryParam(qrCode, "ticket");
         if (ticket.empty())
         {
@@ -77,6 +78,17 @@ public:
         if (ticket.empty())
         {
             return false;
+        }
+
+        // 网页端登录二维码(user.mihoyo.com/login-platform, 含tk/token_types, 无biz_key/app_id):
+        // 走通行证stoken确认流程, 无需游戏biz
+        if (!getUrlQueryParam(qrCode, "token_types").empty() &&
+            getUrlQueryParam(qrCode, "biz_key").empty() &&
+            getUrlQueryParam(qrCode, "game_biz").empty() &&
+            getUrlQueryParam(qrCode, "app_id").empty())
+        {
+            isWebLogin = true;
+            return true;
         }
 
         std::string bizKey = getUrlQueryParam(qrCode, "biz_key");

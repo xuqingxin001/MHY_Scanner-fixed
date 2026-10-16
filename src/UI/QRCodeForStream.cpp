@@ -93,7 +93,8 @@ void QRCodeForStream::LoginOfficial()
                 std::string str;
                 qrScanners.decodeSingle(img, str);
                 std::string ticket;
-                if (!parseOfficialQRCode(str, ticket))
+                bool isWebLogin = false;
+                if (!parseOfficialQRCode(str, ticket, isWebLogin))
                 {
                     return;
                 }
@@ -105,6 +106,24 @@ void QRCodeForStream::LoginOfficial()
                 {
                     if (!m_stop.load())
                     {
+                        mtx.unlock();
+                        return;
+                    }
+                    if (isWebLogin)
+                    {
+                        // 网页端扫码: 二维码即通行证登录URL(含tk+token_types), 直接用stoken确认
+                        lastTicket = ticket;
+                        lastQrCode = str;
+                        nlohmann::json config = nlohmann::json::parse(m_config->getConfig());
+                        if (config["auto_login"])
+                        {
+                            continueLastLogin();
+                        }
+                        else
+                        {
+                            Q_EMIT loginConfirm(gameType, false);
+                        }
+                        stop();
                         mtx.unlock();
                         return;
                     }
@@ -174,9 +193,10 @@ void QRCodeForStream::LoginBH3BiliBili()
                 std::string str;
                 qrScanners.decodeSingle(img, str);
                 std::string ticket;
-                if (!parseOfficialQRCode(str, ticket) || gameType != GameType::Honkai3)
+                bool isWebLogin = false;
+                if (!parseOfficialQRCode(str, ticket, isWebLogin) || gameType != GameType::Honkai3 || isWebLogin)
                 {
-                    return;
+                    return; // 网页端通行证二维码在B服模式下忽略(需官服stoken确认)
                 }
                 if (lastTicket == ticket)
                 {
