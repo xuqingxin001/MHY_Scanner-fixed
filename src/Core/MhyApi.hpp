@@ -454,64 +454,7 @@ inline auto LoginByMobileCaptcha(const std::string_view actionType, const std::s
             std::string mid{};
         } data;
     } result;
-#if 0
-	const std::string RequestBody{ std::format(R"({{"area_code":"{}","action_type":"{}","captcha":"{}","mobile":"{}"}})", Encrypt("+86"), actionType, captcha, Encrypt(mobile)) };
-    std::map<std::string, std::string> headers{ GetRequestHeader() };
-    headers["DS"] = DataSignAlgorithmVersionGen2(RequestBody, "");
-    if (!aigis.empty())
-    {
-        headers["X-Rpc-Aigis"] = aigis;
-    }
-    HttpClient h;
-    std::string s;
-    h.PostRequest(s, URL_LoginByMobileCaptcha, RequestBody, headers);
-    //std::cout << s << std::endl;
-    json::Json j{};
-    j.parse(s);
-    result.retcode = j["retcode"];
-    if (result.retcode == -3205)
-    {
-        return result;
-    }
-    else if (result.retcode == 0)
-    {
-        result.data.V2Token = j["data"]["token"]["token"];
-        result.data.aid = j["data"]["user_info"]["aid"];
-        result.data.mid = j["data"]["user_info"]["mid"];
-    }
-#endif
     return result;
-}
-
-inline bool ScanQRLogin(const std::string_view url, const std::string_view ticket, GameType gameType)
-{
-    const auto response = cpr::Post(
-        cpr::Url{ url },
-        cpr::Body{ nlohmann::json{
-            { "app_id", static_cast<int>(gameType) },
-            { "device", device_id },
-            { "ticket", ticket } }
-                       .dump() },
-        cpr::Header{ { "Content-Type", "application/json" } });
-
-    const auto j = nlohmann::json::parse(response.text);
-    return j.value("retcode", -1) == 0;
-}
-
-inline bool ConfirmQRLogin(const std::string_view url, const std::string_view uid, const std::string_view gameToken, const std::string_view ticket, GameType gameType)
-{
-    const auto response = cpr::Post(
-        cpr::Url{ url },
-        cpr::Body{ nlohmann::json{
-            { "app_id", static_cast<int>(gameType) },
-            { "device", device_id },
-            { "ticket", ticket },
-            { "payload", { { "proto", "Account" }, { "raw", nlohmann::json{ { "uid", uid }, { "token", gameToken } }.dump() } } } }
-                       .dump() },
-        cpr::Header{ { "Content-Type", "application/json" } });
-
-    const auto j = nlohmann::json::parse(response.text);
-    return j.value("retcode", -1) == 0;
 }
 
 inline std::string makeSign(const nlohmann::json& data)

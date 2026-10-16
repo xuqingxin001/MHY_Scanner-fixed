@@ -4,8 +4,6 @@
 #include <thread>
 #include <algorithm>
 #include <vector>
-#include <memory>
-#include <cstdlib>
 #include <Windows.h>
 #include <opencv2/imgcodecs.hpp>
 
@@ -17,7 +15,6 @@
 
 #include "QRScanner.h"
 #include "ScreenScan.h"
-#include "ScreenShotDXGI.hpp"
 
 #define DELAYED 200
 
