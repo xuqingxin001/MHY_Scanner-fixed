@@ -325,7 +325,8 @@ void WindowMain::islogin(const ScanRet ret)
     SetWindowToFront();
     QMessageBox* messageBox = new QMessageBox(this);
     auto Show_QMessageBox = [&](const QString& title, const QString& text) {
-        messageBox->setIcon(QMessageBox::Information);
+        // 不设图标: QMessageBox带Information图标时Windows会额外播放系统提示音,
+        // 与"扫码成功提示音"开关重复(勾选=双重声音/不勾=仍响), 统一由playSuccessBeep控制
         messageBox->setWindowTitle(title);
         messageBox->setText(text);
         messageBox->addButton(QMessageBox::Yes);
