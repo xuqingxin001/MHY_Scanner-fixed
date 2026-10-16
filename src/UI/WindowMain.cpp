@@ -56,6 +56,7 @@ WindowMain::WindowMain(QWidget* parent) :
     connect(ui.checkBoxAutoScreen, &QCheckBox::clicked, this, &WindowMain::checkBoxAutoScreen);
     connect(ui.checkBoxAutoExit, &QCheckBox::clicked, this, &WindowMain::checkBoxAutoExit);
     connect(ui.checkBoxAutoLogin, &QCheckBox::clicked, this, &WindowMain::checkBoxAutoLogin);
+    connect(ui.checkBoxBeep, &QCheckBox::clicked, this, &WindowMain::checkBoxBeep);
     connect(ui.pBtStream, &QPushButton::clicked, this, &WindowMain::pBtStream);
     connect(ui.tableWidget, &QTableWidget::cellClicked, this, &WindowMain::getInfo);
     connect(&t1, &QRCodeForScreen::loginResults, this, &WindowMain::islogin);
@@ -347,6 +348,7 @@ void WindowMain::islogin(const ScanRet ret)
         Show_QMessageBox("提示", "直播流初始化失败!");
         break;
     case ScanRet::SUCCESS:
+        playSuccessBeep();
         Show_QMessageBox("提示", "扫码成功!");
         break;
     default:
@@ -356,6 +358,7 @@ void WindowMain::islogin(const ScanRet ret)
 
 void WindowMain::loginConfirmTip(const GameType gameType, bool b)
 {
+    playSuccessBeep();
     QString info("正在使用账号" + ui.lineEditUname->text());
     switch (gameType)
     {
@@ -449,6 +452,29 @@ void WindowMain::checkBoxAutoLogin(bool clicked)
         userinfo["auto_login"] = false;
     }
     m_config->updateConfig(userinfo.dump());
+}
+
+void WindowMain::checkBoxBeep(bool clicked)
+{
+    int state = ui.checkBoxBeep->checkState();
+    if (state == Qt::Checked)
+    {
+        userinfo["beep_sound"] = true;
+    }
+    else if (state == Qt::Unchecked)
+    {
+        userinfo["beep_sound"] = false;
+    }
+    m_config->updateConfig(userinfo.dump());
+}
+
+// 扫码成功提示音(受"扫码成功提示音"开关控制)
+void WindowMain::playSuccessBeep() const
+{
+    if (userinfo.contains("beep_sound") && userinfo["beep_sound"].get<bool>())
+    {
+        QApplication::beep();
+    }
 }
 
 void WindowMain::liveIdError(const LiveStreamStatus status)
@@ -650,6 +676,10 @@ void WindowMain::configInitUpdate()
         if (userinfo["auto_login"])
         {
             ui.checkBoxAutoLogin->setChecked(true);
+        }
+        if (userinfo.contains("beep_sound") && userinfo["beep_sound"].get<bool>())
+        {
+            ui.checkBoxBeep->setChecked(true);
         }
     }
     catch (const std::exception& e)

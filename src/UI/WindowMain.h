@@ -61,6 +61,7 @@ public Q_SLOTS:
     void checkBoxAutoScreen(bool clicked);
     void checkBoxAutoExit(bool clicked);
     void checkBoxAutoLogin(bool clicked);
+    void checkBoxBeep(bool clicked);
 
     void islogin(const ScanRet ret);
     void loginConfirmTip(const GameType gameType, bool b);
@@ -77,6 +78,7 @@ Q_SIGNALS:
 
 private:
     void failure();
+    void playSuccessBeep() const;
     int countA = -1;
     Ui::WindowMain ui;
     ConfigDate* m_config = &ConfigDate::getInstance();
