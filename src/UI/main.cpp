@@ -50,7 +50,7 @@ static void LogWriteFmt(HANDLE hFile, const WCHAR* fmt, ...)
 }
 
 // StackWalk64 读内存回调
-static DWORD WINAPI ReadProcMem(HANDLE, DWORD64 addr, PVOID buf, DWORD size, DWORD* bytesRead)
+static BOOL WINAPI ReadProcMem(HANDLE, DWORD64 addr, PVOID buf, DWORD size, DWORD* bytesRead)
 {
     SIZE_T read = 0;
     if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(addr), buf, size, &read))
