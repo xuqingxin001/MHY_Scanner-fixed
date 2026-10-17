@@ -24,17 +24,20 @@
 // 特征为高饱和像素占绝对多数(正常桌面远低于50%); 命中即判定该屏 DXGI 不可用, 回退 GDI
 static bool IsFrameCorrupted(const cv::Mat& bgra)
 {
-    cv::Mat small, hsv;
+    cv::Mat small;
     cv::resize(bgra, small, cv::Size(64, 36));
-    cv::cvtColor(small, hsv, cv::COLOR_BGRA2HSV);
     const int total = small.rows * small.cols;
     int sat = 0;
-    for (int y = 0; y < hsv.rows; ++y)
+    for (int y = 0; y < small.rows; ++y)
     {
-        const cv::Vec3b* row = hsv.ptr<cv::Vec3b>(y);
-        for (int x = 0; x < hsv.cols; ++x)
+        const cv::Vec4b* row = small.ptr<cv::Vec4b>(y);
+        for (int x = 0; x < small.cols; ++x)
         {
-            if (row[x][1] > 180)
+            // BGRA: 手动计算饱和度(避免依赖各OpenCV版本枚举差异), S=(max-min)/max
+            const cv::Vec4b& p = row[x];
+            const int mx = std::max(p[0], std::max(p[1], p[2]));
+            const int mn = std::min(p[0], std::min(p[1], p[2]));
+            if (mx > 0 && (mx - mn) * 100 / mx > 70)
             {
                 ++sat;
             }
@@ -283,7 +286,7 @@ void QRCodeForScreen::LoginOfficial()
         {
             // 1) DXGI 优先(按虚拟桌面坐标匹配该屏), 失败/坏帧自动回退GDI
             int capRes = 2;
-            for (const auto& sc : capturers)
+            for (auto& sc : capturers)
             {
                 if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                 {
@@ -473,7 +476,7 @@ void QRCodeForScreen::LoginBH3BiliBili()
         {
             // 1) DXGI 优先(按虚拟桌面坐标匹配该屏), 失败/坏帧自动回退GDI
             int capRes = 2;
-            for (const auto& sc : capturers)
+            for (auto& sc : capturers)
             {
                 if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                 {
