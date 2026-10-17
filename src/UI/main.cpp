@@ -12,6 +12,10 @@
 
 #pragma comment(lib, "dbghelp.lib")
 
+// _vsnwprintf_s 完整支持 %p/%llX/%ls 等格式(wvsprintfW 不支持64位地址导致崩溃报告地址乱码)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+
 static std::mutex mtx;
 
 static bool isOpen()
@@ -44,7 +48,7 @@ static void LogWriteFmt(HANDLE hFile, const WCHAR* fmt, ...)
     WCHAR buf[2048]{ 0 };
     va_list args;
     va_start(args, fmt);
-    wvsprintfW(buf, fmt, args);
+    _vsnwprintf_s(buf, _countof(buf), _TRUNCATE, fmt, args);
     va_end(args);
     LogWrite(hFile, buf);
 }
@@ -212,6 +216,7 @@ static long ExceptionFilter(_EXCEPTION_POINTERS* ExceptionInfo)
     MessageBoxW(NULL, msg, L"意外崩溃", MB_OK | MB_ICONERROR);
     return EXCEPTION_EXECUTE_HANDLER;
 }
+#pragma warning(pop)
 
 // C++ 未捕获异常兜底(Qt 事件循环逃逸的异常会走 std::terminate), 伪装成 0xE06D7363 触发同一报告流程
 static void TerminateHandler()

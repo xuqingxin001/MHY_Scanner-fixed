@@ -1,12 +1,29 @@
 ﻿#pragma once
 
 #include <iostream>
+#include <cwctype>
 
 #include <d3d11.h>
 #include <dxgi1_2.h>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
+
+// 虚拟显示适配器(UU超级屏/向日葵/MuMu等间接显示驱动IDD)上 DXGI 桌面复制实测返回损坏帧甚至崩溃,
+// 直接过滤掉: 这些输出走 GDI 兜底; 仅物理显卡(NVIDIA/AMD/Intel)启用 DXGI
+static bool IsVirtualDisplayAdapter(const DXGI_ADAPTER_DESC1& adesc)
+{
+    WCHAR low[128]{ 0 };
+    for (int i = 0; i < 128 && adesc.Description[i] != L'\0'; ++i)
+    {
+        low[i] = static_cast<WCHAR>(towlower(adesc.Description[i]));
+    }
+    return wcsstr(low, L"virtual") != nullptr ||
+           wcsstr(low, L"idd") != nullptr ||
+           wcsstr(low, L"indirect") != nullptr ||
+           wcsstr(low, L"remote") != nullptr ||
+           wcsstr(low, L"mirror") != nullptr;
+}
 
 class ScreenShotDXGI
 {
@@ -136,7 +153,8 @@ public:
         {
             DXGI_ADAPTER_DESC1 adesc{};
             adapter->GetDesc1(&adesc);
-            if (adesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
+            // 跳过软件渲染与虚拟显示适配器(虚拟屏DXGI坏帧/崩溃, 由GDI兜底)
+            if (adesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE || IsVirtualDisplayAdapter(adesc))
             {
                 adapter->Release();
                 adapter = nullptr;
@@ -287,7 +305,8 @@ public:
         {
             DXGI_ADAPTER_DESC1 adesc{};
             adapter->GetDesc1(&adesc);
-            if (!(adesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE))
+            // 只统计物理显卡输出(虚拟显示适配器走GDI, 不参与DXGI序号)
+            if (!(adesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) && !IsVirtualDisplayAdapter(adesc))
             {
                 IDXGIOutput* output = nullptr;
                 for (UINT j = 0; adapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND; ++j)
