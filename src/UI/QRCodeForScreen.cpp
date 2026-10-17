@@ -46,7 +46,34 @@ static bool IsFrameCorrupted(const cv::Mat& bgra)
     return static_cast<double>(sat) / total > 0.5;
 }
 
-// 每个屏幕一个捕获源: DXGI 优先, 初始化失败/抓帧失败/坏帧时自动回退 GDI
+// SEH 异常保护: DXGI 桌面复制在部分环境(虚拟屏/被其他软件同时占用)可能内部崩溃,
+// 任何 DXGI 调用崩溃都被捕获并视为该屏 DXGI 不可用, 自动回退 GDI, 保证程序不闪退。
+// 包装函数内无 C++ 局部对象析构, 可安全使用 __try/__except
+static int SafeGetFrame(ScreenShotDXGI& dxgi, int timeout)
+{
+    __try { return dxgi.getFrame(timeout); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return 1; }
+}
+
+static bool SafeCopyFrame(ScreenShotDXGI& dxgi, uint8_t* buffer, size_t size)
+{
+    __try { return dxgi.copyFrameToBuffer(&buffer, static_cast<long>(size)); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+static bool SafeDoneWithFrame(ScreenShotDXGI& dxgi)
+{
+    __try { return dxgi.doneWithFrame(); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+static bool SafeInitDupl(ScreenShotDXGI& dxgi, int idx, int& w, int& h)
+{
+    __try { return dxgi.InitDupl(static_cast<UINT>(idx), w, h); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+// 每个屏幕一个捕获源: DXGI 优先, 初始化失败/抓帧失败/坏帧/崩溃时自动回退 GDI
 struct ScreenCapturer
 {
     ScreenShotDXGI dxgi;
@@ -57,7 +84,7 @@ struct ScreenCapturer
     bool Init(int outputIdx)
     {
         int w = 0, h = 0;
-        if (dxgi.InitDupl(outputIdx, w, h))
+        if (SafeInitDupl(dxgi, outputIdx, w, h))
         {
             rect = dxgi.GetOutputRect();
             dxgiUsable = true;
@@ -79,18 +106,22 @@ struct ScreenCapturer
         {
             return 2;
         }
-        const int fr = dxgi.getFrame(100);
+        const int fr = SafeGetFrame(dxgi, 100);
         if (fr == 1)
         {
-            dxgiUsable = false; // 桌面复制失效/错误(切屏/锁屏等) → 回退GDI
+            dxgiUsable = false; // 桌面复制失效/错误(切屏/锁屏/崩溃等) → 回退GDI
             return 2;
         }
         if (fr == 2)
         {
             return 1; // 屏幕无变化, 无新帧
         }
-        const bool ok = dxgi.copyFrameToBuffer(&buffer, static_cast<size_t>(w) * h * 4);
-        dxgi.doneWithFrame();
+        const bool ok = SafeCopyFrame(dxgi, buffer, static_cast<size_t>(w) * h * 4);
+        if (!SafeDoneWithFrame(dxgi))
+        {
+            dxgiUsable = false; // 释放帧失败/崩溃 → 回退GDI
+            return 2;
+        }
         if (!ok || IsFrameCorrupted(cv::Mat(h, w, CV_8UC4, buffer)))
         {
             dxgiUsable = false; // 复制失败或坏帧(虚拟屏条纹) → 回退GDI
