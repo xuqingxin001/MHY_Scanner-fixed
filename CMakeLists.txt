@@ -125,6 +125,12 @@ set(PROJECT_LIBRARIES
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_LIBRARIES})
 
+# Release 也生成 PDB 调试符号, 供崩溃报告的调用栈解析函数名
+if(MSVC)
+	target_compile_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/Zi>)
+	target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/DEBUG>)
+endif()
+
 file(GLOB FFMPEG_DLL_FILES
 	"${FFMPEG_BIN_DIR}/avcodec-*.dll"
 	"${FFMPEG_BIN_DIR}/avformat-*.dll"

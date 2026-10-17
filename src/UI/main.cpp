@@ -97,10 +97,10 @@ static void WriteModuleList(HANDLE hLog)
     CloseHandle(snap);
 }
 
-// 调用栈(无符号时输出 模块+偏移, 同样可定位崩溃函数)
+// 调用栈(加载exe同目录PDB解析函数名; 无符号时输出 模块+偏移, 同样可定位崩溃函数)
 static void WriteStackTrace(HANDLE hLog, _EXCEPTION_POINTERS* pEx)
 {
-    LogWrite(hLog, L"---- 调用栈(模块+偏移) ----\r\n");
+    LogWrite(hLog, L"---- 调用栈(模块+函数+偏移) ----\r\n");
     CONTEXT ctx = *pEx->ContextRecord;
     STACKFRAME64 frame{};
     DWORD machine = 0;
@@ -121,7 +121,9 @@ static void WriteStackTrace(HANDLE hLog, _EXCEPTION_POINTERS* pEx)
     frame.AddrStack.Offset = ctx.Esp;
     frame.AddrStack.Mode = AddrModeFlat;
 #endif
-    SymInitialize(GetCurrentProcess(), NULL, FALSE);
+    WCHAR exeDir[MAX_PATH]{ 0 };
+    GetExeDirectory(exeDir, MAX_PATH);
+    SymInitialize(GetCurrentProcess(), exeDir, TRUE); // 从 exe 目录加载同名 PDB 符号
     int count = 0;
     while (count < 32 && StackWalk64(machine, GetCurrentProcess(), GetCurrentThread(), &frame, &ctx,
                                      ReadProcMem, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
@@ -140,12 +142,27 @@ static void WriteStackTrace(HANDLE hLog, _EXCEPTION_POINTERS* pEx)
             {
                 ++name;
             }
-            LogWriteFmt(hLog, L"#%02d %s+0x%08llX\r\n", count, name != nullptr ? name : modName,
-                        static_cast<ULONGLONG>(frame.AddrPC.Offset - base));
+            // 解析函数名(PDB 与 exe 同目录时输出 模块!函数+偏移)
+            char funcBuf[1024]{ 0 };
+            SYMBOL_INFO* sym = reinterpret_cast<SYMBOL_INFO*>(funcBuf);
+            sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+            sym->MaxNameLen = 480;
+            DWORD64 disp = 0;
+            const bool hasFunc = SymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &disp, sym) != FALSE && sym->Name[0] != '\0';
+            if (hasFunc)
+            {
+                LogWriteFmt(hLog, L"#%02d %s!%hs+0x%llX\r\n", count, name != nullptr ? name : modName,
+                            sym->Name, static_cast<ULONGLONG>(disp));
+            }
+            else
+            {
+                LogWriteFmt(hLog, L"#%02d %s+0x%llX\r\n", count, name != nullptr ? name : modName,
+                            static_cast<ULONGLONG>(frame.AddrPC.Offset - base));
+            }
         }
         else
         {
-            LogWriteFmt(hLog, L"#%02d 0x%08llX\r\n", count, static_cast<ULONGLONG>(frame.AddrPC.Offset));
+            LogWriteFmt(hLog, L"#%02d 0x%llX\r\n", count, static_cast<ULONGLONG>(frame.AddrPC.Offset));
         }
         ++count;
     }
