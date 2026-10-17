@@ -37,10 +37,16 @@ static void GetExeDirectory(WCHAR* dir, size_t size)
     wcsncpy_s(dir, size, exe, _TRUNCATE);
 }
 
+// 崩溃报告 .log 以 UTF-8 写入(文件开头写BOM), 保证记事本/常见编辑器正常识别中文
 static void LogWrite(HANDLE hFile, const WCHAR* text)
 {
-    DWORD written = 0;
-    WriteFile(hFile, text, static_cast<DWORD>(wcslen(text) * sizeof(WCHAR)), &written, nullptr);
+    char utf8[8192]{ 0 };
+    const int len = WideCharToMultiByte(CP_UTF8, 0, text, -1, utf8, sizeof(utf8), NULL, NULL);
+    if (len > 1)
+    {
+        DWORD written = 0;
+        WriteFile(hFile, utf8, static_cast<DWORD>(len - 1), &written, nullptr);
+    }
 }
 
 static void LogWriteFmt(HANDLE hFile, const WCHAR* fmt, ...)
@@ -176,6 +182,10 @@ static long ExceptionFilter(_EXCEPTION_POINTERS* ExceptionInfo)
     HANDLE hLog = CreateFileW(logPath, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hLog != INVALID_HANDLE_VALUE)
     {
+        // UTF-8 BOM: 记事本据此正确识别编码
+        const BYTE bom[3] = { 0xEF, 0xBB, 0xBF };
+        DWORD bomWritten = 0;
+        WriteFile(hLog, bom, sizeof(bom), &bomWritten, nullptr);
         LogWriteFmt(hLog, L"MHY_Scanner 崩溃报告\r\n时间: %04d-%02d-%02d %02d:%02d:%02d\r\n",
                     stLocalTime.wYear, stLocalTime.wMonth, stLocalTime.wDay,
                     stLocalTime.wHour, stLocalTime.wMinute, stLocalTime.wSecond);
