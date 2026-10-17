@@ -15,8 +15,87 @@
 
 #include "QRScanner.h"
 #include "ScreenScan.h"
+#include "ScreenShotDXGI.hpp"
+#include <opencv2/imgproc.hpp>
 
 #define DELAYED 200
+
+// DXGI 坏帧检测: UU超级屏等虚拟显示器上 DXGI 桌面复制返回水平撕裂彩色条纹,
+// 特征为高饱和像素占绝对多数(正常桌面远低于50%); 命中即判定该屏 DXGI 不可用, 回退 GDI
+static bool IsFrameCorrupted(const cv::Mat& bgra)
+{
+    cv::Mat small, hsv;
+    cv::resize(bgra, small, cv::Size(64, 36));
+    cv::cvtColor(small, hsv, cv::COLOR_BGRA2HSV);
+    const int total = small.rows * small.cols;
+    int sat = 0;
+    for (int y = 0; y < hsv.rows; ++y)
+    {
+        const cv::Vec3b* row = hsv.ptr<cv::Vec3b>(y);
+        for (int x = 0; x < hsv.cols; ++x)
+        {
+            if (row[x][1] > 180)
+            {
+                ++sat;
+            }
+        }
+    }
+    return static_cast<double>(sat) / total > 0.5;
+}
+
+// 每个屏幕一个捕获源: DXGI 优先, 初始化失败/抓帧失败/坏帧时自动回退 GDI
+struct ScreenCapturer
+{
+    ScreenShotDXGI dxgi;
+    RECT rect{};
+    bool dxgiUsable = false;
+
+    // 按全局输出序号初始化 DXGI 桌面复制, 记录虚拟桌面坐标用于与 GDI 屏配对
+    bool Init(int outputIdx)
+    {
+        int w = 0, h = 0;
+        if (dxgi.InitDupl(outputIdx, w, h))
+        {
+            rect = dxgi.GetOutputRect();
+            dxgiUsable = true;
+            return true;
+        }
+        return false;
+    }
+
+    bool Matches(int x, int y, int w, int h) const
+    {
+        return rect.left == x && rect.top == y &&
+               rect.right - rect.left == w && rect.bottom - rect.top == h;
+    }
+
+    // 返回值: 0=已捕获有效帧 1=本轮无新帧(超时,跳过) 2=失败需GDI兜底
+    int CaptureDXGI(uint8_t* buffer, int w, int h)
+    {
+        if (!dxgiUsable)
+        {
+            return 2;
+        }
+        const int fr = dxgi.getFrame(100);
+        if (fr == 1)
+        {
+            dxgiUsable = false; // 桌面复制失效/错误(切屏/锁屏等) → 回退GDI
+            return 2;
+        }
+        if (fr == 2)
+        {
+            return 1; // 屏幕无变化, 无新帧
+        }
+        const bool ok = dxgi.copyFrameToBuffer(&buffer, static_cast<size_t>(w) * h * 4);
+        dxgi.doneWithFrame();
+        if (!ok || IsFrameCorrupted(cv::Mat(h, w, CV_8UC4, buffer)))
+        {
+            dxgiUsable = false; // 复制失败或坏帧(虚拟屏条纹) → 回退GDI
+            return 2;
+        }
+        return 0;
+    }
+};
 
 // 枚举所有显示器(主屏+副屏)的回调, 收集虚拟桌面坐标矩形
 static BOOL CALLBACK MonitorEnumProc(HMONITOR /*hMonitor*/, HDC /*hdcMonitor*/, LPRECT lprcMonitor, LPARAM dwData)
@@ -133,6 +212,18 @@ void QRCodeForScreen::LoginOfficial()
         mScale.push_back(std::min(1280.0 / (r.right - r.left), 720.0 / (r.bottom - r.top)));
     }
 
+    // DXGI 优先捕获: 为所有全局输出建立桌面复制, 初始化失败/抓帧失败/坏帧时自动回退GDI
+    std::vector<ScreenCapturer> capturers;
+    const int outCount = ScreenShotDXGI::GetOutputCount();
+    for (int o = 0; o < outCount; ++o)
+    {
+        ScreenCapturer sc;
+        if (sc.Init(o))
+        {
+            capturers.push_back(std::move(sc));
+        }
+    }
+
     while (m_stop.load())
     {
         // 屏幕数量/尺寸变化检测: 变化时重新枚举并重分配缓冲(分辨率自适应)
@@ -172,6 +263,17 @@ void QRCodeForScreen::LoginOfficial()
                 mBuffer.push_back(new UCHAR[(r.right - r.left) * (r.bottom - r.top) * 4]);
                 mScale.push_back(std::min(1280.0 / (r.right - r.left), 720.0 / (r.bottom - r.top)));
             }
+            // 屏幕布局变化(开/关超级屏等)后重建 DXGI 桌面复制
+            capturers.clear();
+            const int newOutCount = ScreenShotDXGI::GetOutputCount();
+            for (int o = 0; o < newOutCount; ++o)
+            {
+                ScreenCapturer sc;
+                if (sc.Init(o))
+                {
+                    capturers.push_back(std::move(sc));
+                }
+            }
         }
         if (mons.empty())
         {
@@ -179,9 +281,26 @@ void QRCodeForScreen::LoginOfficial()
         }
         for (size_t i = 0; i < mons.size(); ++i)
         {
-            if (!CaptureScreenGDIRegion(mBuffer[i], mX[i], mY[i], mW[i], mH[i]))
+            // 1) DXGI 优先(按虚拟桌面坐标匹配该屏), 失败/坏帧自动回退GDI
+            int capRes = 2;
+            for (const auto& sc : capturers)
             {
-                continue; // GDI抓屏失败, 跳过
+                if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
+                {
+                    capRes = sc.CaptureDXGI(mBuffer[i], mW[i], mH[i]);
+                    break;
+                }
+            }
+            if (capRes == 1)
+            {
+                continue; // DXGI无新帧(屏幕无变化), 本轮跳过
+            }
+            if (capRes == 2)
+            {
+                if (!CaptureScreenGDIRegion(mBuffer[i], mX[i], mY[i], mW[i], mH[i]))
+                {
+                    continue; // GDI抓屏失败, 跳过
+                }
             }
             cv::Mat img;
             cv::resize(cv::Mat(mH[i], mW[i], CV_8UC4, mBuffer[i]), img,
@@ -283,6 +402,18 @@ void QRCodeForScreen::LoginBH3BiliBili()
         mScale.push_back(std::min(1280.0 / (r.right - r.left), 720.0 / (r.bottom - r.top)));
     }
 
+    // DXGI 优先捕获: 为所有全局输出建立桌面复制, 初始化失败/抓帧失败/坏帧时自动回退GDI
+    std::vector<ScreenCapturer> capturers;
+    const int outCount = ScreenShotDXGI::GetOutputCount();
+    for (int o = 0; o < outCount; ++o)
+    {
+        ScreenCapturer sc;
+        if (sc.Init(o))
+        {
+            capturers.push_back(std::move(sc));
+        }
+    }
+
     while (m_stop.load())
     {
         // 屏幕数量/尺寸变化检测: 变化时重新枚举并重分配缓冲(分辨率自适应)
@@ -322,6 +453,17 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 mBuffer.push_back(new UCHAR[(r.right - r.left) * (r.bottom - r.top) * 4]);
                 mScale.push_back(std::min(1280.0 / (r.right - r.left), 720.0 / (r.bottom - r.top)));
             }
+            // 屏幕布局变化(开/关超级屏等)后重建 DXGI 桌面复制
+            capturers.clear();
+            const int newOutCount = ScreenShotDXGI::GetOutputCount();
+            for (int o = 0; o < newOutCount; ++o)
+            {
+                ScreenCapturer sc;
+                if (sc.Init(o))
+                {
+                    capturers.push_back(std::move(sc));
+                }
+            }
         }
         if (mons.empty())
         {
@@ -329,9 +471,26 @@ void QRCodeForScreen::LoginBH3BiliBili()
         }
         for (size_t i = 0; i < mons.size(); ++i)
         {
-            if (!CaptureScreenGDIRegion(mBuffer[i], mX[i], mY[i], mW[i], mH[i]))
+            // 1) DXGI 优先(按虚拟桌面坐标匹配该屏), 失败/坏帧自动回退GDI
+            int capRes = 2;
+            for (const auto& sc : capturers)
             {
-                continue; // GDI抓屏失败, 跳过
+                if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
+                {
+                    capRes = sc.CaptureDXGI(mBuffer[i], mW[i], mH[i]);
+                    break;
+                }
+            }
+            if (capRes == 1)
+            {
+                continue; // DXGI无新帧(屏幕无变化), 本轮跳过
+            }
+            if (capRes == 2)
+            {
+                if (!CaptureScreenGDIRegion(mBuffer[i], mX[i], mY[i], mW[i], mH[i]))
+                {
+                    continue; // GDI抓屏失败, 跳过
+                }
             }
             cv::Mat img;
             cv::resize(cv::Mat(mH[i], mW[i], CV_8UC4, mBuffer[i]), img,
