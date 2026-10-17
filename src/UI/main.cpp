@@ -5,6 +5,8 @@
 #include <tlhelp32.h>
 #include <exception>
 #include <mutex>
+#include <signal.h>
+#include <stdlib.h>
 
 #include <QMessageBox>
 #include <QStyleHints>
@@ -228,14 +230,14 @@ static long ExceptionFilter(_EXCEPTION_POINTERS* ExceptionInfo)
 }
 #pragma warning(pop)
 
-// C++ 未捕获异常兜底(Qt 事件循环逃逸的异常会走 std::terminate), 伪装成 0xE06D7363 触发同一报告流程
-static void TerminateHandler()
+// 无异常指针时构造上下文, 复用同一报告流程(供 terminate/abort/CRT错误等兜底调用)
+static void ReportCrashNoContext(DWORD code)
 {
     std::lock_guard<std::mutex> lock(mtx);
     CONTEXT ctx{};
     RtlCaptureContext(&ctx);
     EXCEPTION_RECORD er{};
-    er.ExceptionCode = 0xE06D7363; // MSVC C++ 异常
+    er.ExceptionCode = code;
 #ifdef _M_X64
     er.ExceptionAddress = reinterpret_cast<PVOID>(ctx.Rip);
 #else
@@ -243,7 +245,32 @@ static void TerminateHandler()
 #endif
     EXCEPTION_POINTERS ep{ &er, &ctx };
     ExceptionFilter(&ep);
-    std::abort();
+}
+
+// C++ 未捕获异常兜底(Qt 事件循环逃逸的异常会走 std::terminate), 伪装成 0xE06D7363 触发同一报告流程
+static void TerminateHandler()
+{
+    ReportCrashNoContext(0xE06D7363); // MSVC C++ 异常
+    _exit(3); // 直接退出, 避免再触发 abort signal 产生重复报告
+}
+
+// abort/qFatal/assert 等致命终止路径: 默认不经异常过滤器直接消失, 挂 signal 捕获后写报告
+static void __cdecl AbortSignalHandler(int)
+{
+    ReportCrashNoContext(0xC0000409); // abort 类致命错误(安全检查失败/断言/Qt致命错误)
+    _exit(3);
+}
+
+// 纯虚函数调用兜底(程序消失常见原因之一)
+static void __cdecl PureCallHandler()
+{
+    ReportCrashNoContext(0xC0000409);
+}
+
+// CRT 参数校验失败兜底(常见于非法句柄/索引越界等)
+static void __cdecl InvalidParamHandler(const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t)
+{
+    ReportCrashNoContext(0xC0000409);
 }
 
 int main(int argc, char* argv[])
@@ -252,6 +279,11 @@ int main(int argc, char* argv[])
     SetConsoleOutputCP(utf8);
     SetUnhandledExceptionFilter(ExceptionFilter);
     std::set_terminate(TerminateHandler);
+    // abort/断言/Qt致命错误(qFatal)走 signal 兜底, 避免"直接消失无日志"
+    signal(SIGABRT, AbortSignalHandler);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    _set_purecall_handler(PureCallHandler);
+    _set_invalid_parameter_handler(InvalidParamHandler);
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_ERROR);
     QApplication a(argc, argv);
     QApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
