@@ -73,12 +73,13 @@ static bool SafeInitDupl(ScreenShotDXGI& dxgi, int idx, int& w, int& h)
     __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
-// 每个屏幕一个捕获源: DXGI 优先, 初始化失败/抓帧失败/坏帧/崩溃时自动回退 GDI
+// 每个屏幕一个捕获源: DXGI 优先, 初始化失败/抓帧失败/坏帧/崩溃/连续无新帧时自动回退 GDI
 struct ScreenCapturer
 {
     ScreenShotDXGI dxgi;
     RECT rect{};
     bool dxgiUsable = false;
+    int dxgiFailCount = 0; // 连续无新帧计数, 超过阈值永久回退GDI(远程软件抢占桌面复制时DXGI常超时)
 
     // 按全局输出序号初始化 DXGI 桌面复制, 记录虚拟桌面坐标用于与 GDI 屏配对
     bool Init(int outputIdx)
@@ -99,7 +100,7 @@ struct ScreenCapturer
                rect.right - rect.left == w && rect.bottom - rect.top == h;
     }
 
-    // 返回值: 0=已捕获有效帧 1=本轮无新帧(超时,跳过) 2=失败需GDI兜底
+    // 返回值: 0=已捕获有效帧 1=本轮无新帧(需GDI补抓, 不再整屏跳过) 2=失败需GDI兜底
     int CaptureDXGI(uint8_t* buffer, int w, int h)
     {
         if (!dxgiUsable)
@@ -109,12 +110,19 @@ struct ScreenCapturer
         const int fr = SafeGetFrame(dxgi, 100);
         if (fr == 1)
         {
-            dxgiUsable = false; // 桌面复制失效/错误(切屏/锁屏/崩溃等) → 回退GDI
+            dxgiUsable = false; // 桌面复制失效/错误(切屏/锁屏/崩溃等) → 永久回退GDI
             return 2;
         }
         if (fr == 2)
         {
-            return 1; // 屏幕无变化, 无新帧
+            // 无新帧(超时): 远程软件(UU/向日葵等)同时占用桌面复制时可能持续超时,
+            // 连续阈值内先返回1由GDI补抓, 超过阈值永久回退GDI
+            if (++dxgiFailCount >= 15)
+            {
+                dxgiUsable = false;
+                return 2;
+            }
+            return 1;
         }
         const bool ok = SafeCopyFrame(dxgi, buffer, static_cast<size_t>(w) * h * 4);
         if (!SafeDoneWithFrame(dxgi))
@@ -127,6 +135,7 @@ struct ScreenCapturer
             dxgiUsable = false; // 复制失败或坏帧(虚拟屏条纹) → 回退GDI
             return 2;
         }
+        dxgiFailCount = 0; // 拿到有效帧, 计数清零
         return 0;
     }
 };
@@ -327,7 +336,11 @@ void QRCodeForScreen::LoginOfficial()
             }
             if (capRes == 1)
             {
-                continue; // DXGI无新帧(屏幕无变化), 本轮跳过
+                // DXGI无新帧(超时/被远程软件抢占): 不整屏跳过, 用GDI补抓该屏, 保证能扫到
+                if (!CaptureScreenGDIRegion(mBuffer[i], mX[i], mY[i], mW[i], mH[i]))
+                {
+                    continue; // GDI抓屏也失败, 跳过
+                }
             }
             if (capRes == 2)
             {
@@ -517,7 +530,11 @@ void QRCodeForScreen::LoginBH3BiliBili()
             }
             if (capRes == 1)
             {
-                continue; // DXGI无新帧(屏幕无变化), 本轮跳过
+                // DXGI无新帧(超时/被远程软件抢占): 不整屏跳过, 用GDI补抓该屏, 保证能扫到
+                if (!CaptureScreenGDIRegion(mBuffer[i], mX[i], mY[i], mW[i], mH[i]))
+                {
+                    continue; // GDI抓屏也失败, 跳过
+                }
             }
             if (capRes == 2)
             {
