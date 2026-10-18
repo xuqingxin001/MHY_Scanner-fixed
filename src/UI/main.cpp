@@ -123,7 +123,7 @@ static void WriteStackTrace(HANDLE hLog, _EXCEPTION_POINTERS* pEx)
 #endif
     WCHAR exeDir[MAX_PATH]{ 0 };
     GetExeDirectory(exeDir, MAX_PATH);
-    SymInitialize(GetCurrentProcess(), exeDir, TRUE); // 从 exe 目录加载同名 PDB 符号
+    SymInitializeW(GetCurrentProcess(), exeDir, TRUE); // 从 exe 目录加载同名 PDB 符号(宽字符版, exeDir 是 WCHAR 数组)
     int count = 0;
     while (count < 32 && StackWalk64(machine, GetCurrentProcess(), GetCurrentThread(), &frame, &ctx,
                                      ReadProcMem, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
