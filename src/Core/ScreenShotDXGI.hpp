@@ -38,6 +38,58 @@ public:
     }
     ~ScreenShotDXGI()
     {
+        ReleaseResources();
+    }
+
+    // 拷贝禁止: 持有 COM 指针的类被浅拷贝会 double Release(导致扫码/退出时闪退)
+    ScreenShotDXGI(const ScreenShotDXGI&) = delete;
+    ScreenShotDXGI& operator=(const ScreenShotDXGI&) = delete;
+
+    // 移动语义: vector 扩容时正确转移 COM 指针, 源对象置空避免二次释放
+    ScreenShotDXGI(ScreenShotDXGI&& other) noexcept
+        : m_Device(other.m_Device),
+          m_DeskDupl(other.m_DeskDupl),
+          m_DeskDupl_state(other.m_DeskDupl_state),
+          m_monitorIdx(other.m_monitorIdx),
+          m_AcquiredDesktopImage(other.m_AcquiredDesktopImage),
+          m_AcquiredDesktopImage_copy(other.m_AcquiredDesktopImage_copy),
+          m_outputRect(other.m_outputRect),
+          selectedAdapter(other.selectedAdapter)
+    {
+        other.m_Device = nullptr;
+        other.m_DeskDupl = nullptr;
+        other.m_AcquiredDesktopImage = nullptr;
+        other.m_AcquiredDesktopImage_copy = nullptr;
+        other.selectedAdapter = nullptr;
+        other.m_DeskDupl_state = false;
+    }
+
+    ScreenShotDXGI& operator=(ScreenShotDXGI&& other) noexcept
+    {
+        if (this != &other)
+        {
+            ReleaseResources();
+            m_Device = other.m_Device;
+            m_DeskDupl = other.m_DeskDupl;
+            m_DeskDupl_state = other.m_DeskDupl_state;
+            m_monitorIdx = other.m_monitorIdx;
+            m_AcquiredDesktopImage = other.m_AcquiredDesktopImage;
+            m_AcquiredDesktopImage_copy = other.m_AcquiredDesktopImage_copy;
+            m_outputRect = other.m_outputRect;
+            selectedAdapter = other.selectedAdapter;
+            other.m_Device = nullptr;
+            other.m_DeskDupl = nullptr;
+            other.m_AcquiredDesktopImage = nullptr;
+            other.m_AcquiredDesktopImage_copy = nullptr;
+            other.selectedAdapter = nullptr;
+            other.m_DeskDupl_state = false;
+        }
+        return *this;
+    }
+
+private:
+    void ReleaseResources()
+    {
         if (m_AcquiredDesktopImage)
         {
             m_AcquiredDesktopImage->Release();
@@ -61,6 +113,7 @@ public:
             m_Device = nullptr;
         }
     }
+public:
     /*
 	 * @brief InitDevic
 	 * @param 2
