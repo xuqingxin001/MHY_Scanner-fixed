@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <cwctype>
+#include <Windows.h>
 
 #include <d3d11.h>
 #include <dxgi1_2.h>
@@ -23,6 +24,28 @@ static bool IsVirtualDisplayAdapter(const DXGI_ADAPTER_DESC1& adesc)
            wcsstr(low, L"indirect") != nullptr ||
            wcsstr(low, L"remote") != nullptr ||
            wcsstr(low, L"mirror") != nullptr;
+}
+
+// 按监视器句柄查 DISPLAY_DEVICE 标志: 远程会话输出(RDP/UU远程等)或镜像驱动显示器
+// 即使挂在物理显卡(NVIDIA)上也能识别出来 → 不走DXGI, 避免黑帧/裂图
+static bool IsRemoteOrMirrorMonitor(HMONITOR hMon)
+{
+    MONITORINFOEXW mi{};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(hMon, &mi))
+    {
+        return false;
+    }
+    DISPLAY_DEVICEW dd{};
+    dd.cb = sizeof(dd);
+    for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); ++i)
+    {
+        if (_wcsicmp(dd.DeviceName, mi.szDevice) == 0)
+        {
+            return (dd.StateFlags & (DISPLAY_DEVICE_MIRRORING_DRIVER | DISPLAY_DEVICE_REMOTE)) != 0;
+        }
+    }
+    return false;
 }
 
 class ScreenShotDXGI
@@ -269,6 +292,17 @@ public:
                     factory->Release();
                     return false;
                 }
+                // 远程会话/镜像驱动输出(如UU远程接管时物理显卡上挂的远程屏): 不走DXGI, 回退GDI
+                DXGI_OUTPUT_DESC chkDesc{};
+                if (SUCCEEDED(output->GetDesc(&chkDesc)) && IsRemoteOrMirrorMonitor(chkDesc.Monitor))
+                {
+                    output->Release();
+                    dev->Release();
+                    devAdapter->Release();
+                    adapter->Release();
+                    factory->Release();
+                    return false;
+                }
                 IDXGIOutput1* output1 = nullptr;
                 hr = output->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void**>(&output1));
                 if (SUCCEEDED(hr))
@@ -364,9 +398,16 @@ public:
                 IDXGIOutput* output = nullptr;
                 for (UINT j = 0; adapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND; ++j)
                 {
-                    ++count;
+                    // 远程/镜像输出不计入DXGI捕获(回退GDI)
+                    DXGI_OUTPUT_DESC od{};
+                    const bool skip = SUCCEEDED(output->GetDesc(&od)) && IsRemoteOrMirrorMonitor(od.Monitor);
                     output->Release();
                     output = nullptr;
+                    if (skip)
+                    {
+                        continue;
+                    }
+                    ++count;
                 }
             }
             adapter->Release();

@@ -20,14 +20,16 @@
 
 #define DELAYED 200
 
-// DXGI 坏帧检测: UU超级屏等虚拟显示器上 DXGI 桌面复制返回水平撕裂彩色条纹,
-// 特征为高饱和像素占绝对多数(正常桌面远低于50%); 命中即判定该屏 DXGI 不可用, 回退 GDI
+// DXGI 坏帧检测: UU超级屏等虚拟显示器上 DXGI 桌面复制返回水平撕裂彩色条纹(高饱和占多数)
+// 或黑帧/空帧(远程会话输出无内容, 平均亮度极低); 命中即判定该屏 DXGI 不可用, 回退 GDI
 static bool IsFrameCorrupted(const cv::Mat& bgra)
 {
     cv::Mat small;
     cv::resize(bgra, small, cv::Size(64, 36));
     const int total = small.rows * small.cols;
     int sat = 0;
+    int dark = 0;
+    long long lumSum = 0;
     for (int y = 0; y < small.rows; ++y)
     {
         const cv::Vec4b* row = small.ptr<cv::Vec4b>(y);
@@ -41,9 +43,25 @@ static bool IsFrameCorrupted(const cv::Mat& bgra)
             {
                 ++sat;
             }
+            // 近黑像素: 远程会话输出黑帧/空帧特征
+            if (mx < 16)
+            {
+                ++dark;
+            }
+            lumSum += mx;
         }
     }
-    return static_cast<double>(sat) / total > 0.5;
+    // 裂图彩条: 高饱和像素占绝对多数
+    if (static_cast<double>(sat) / total > 0.5)
+    {
+        return true;
+    }
+    // 黑帧/空帧: 平均亮度极低 或 近黑像素占绝大多数(远程输出无内容)
+    if (static_cast<double>(dark) / total > 0.95 || lumSum / total < 10)
+    {
+        return true;
+    }
+    return false;
 }
 
 // SEH 异常保护: DXGI 桌面复制在部分环境(虚拟屏/被其他软件同时占用)可能内部崩溃,
