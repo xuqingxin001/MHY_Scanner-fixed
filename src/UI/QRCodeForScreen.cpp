@@ -266,6 +266,23 @@ void QRCodeForScreen::LoginOfficial()
             capturers.push_back(std::move(sc));
         }
     }
+    // 屏幕枚举诊断(启动/重建时输出一次): 确认当前工具看到了哪几个屏, 各屏是否配对DXGI
+    {
+        std::string diag = "[Screen] 屏幕数=" + std::to_string(mons.size()) + " DXGI捕获数=" + std::to_string(capturers.size());
+        diag += " | 屏:";
+        for (const auto& r : mons)
+        {
+            diag += " (" + std::to_string(r.left) + "," + std::to_string(r.top) + ")-" +
+                    std::to_string(r.right - r.left) + "x" + std::to_string(r.bottom - r.top);
+        }
+        diag += " | DXGI:";
+        for (const auto& c : capturers)
+        {
+            diag += " (" + std::to_string(c.rect.left) + "," + std::to_string(c.rect.top) + ")-" +
+                    std::to_string(c.rect.right - c.rect.left) + "x" + std::to_string(c.rect.bottom - c.rect.top);
+        }
+        DebugLog::Log(diag);
+    }
 
     while (m_stop.load())
     {
@@ -316,6 +333,22 @@ void QRCodeForScreen::LoginOfficial()
                 {
                     capturers.push_back(std::move(sc));
                 }
+            }
+            {
+                std::string diag = "[Screen重建] 屏幕数=" + std::to_string(mons.size()) + " DXGI捕获数=" + std::to_string(capturers.size());
+                diag += " | 屏:";
+                for (const auto& r : mons)
+                {
+                    diag += " (" + std::to_string(r.left) + "," + std::to_string(r.top) + ")-" +
+                            std::to_string(r.right - r.left) + "x" + std::to_string(r.bottom - r.top);
+                }
+                diag += " | DXGI:";
+                for (const auto& c : capturers)
+                {
+                    diag += " (" + std::to_string(c.rect.left) + "," + std::to_string(c.rect.top) + ")-" +
+                            std::to_string(c.rect.right - c.rect.left) + "x" + std::to_string(c.rect.bottom - c.rect.top);
+                }
+                DebugLog::Log(diag);
             }
         }
         if (mons.empty())
@@ -460,6 +493,23 @@ void QRCodeForScreen::LoginBH3BiliBili()
             capturers.push_back(std::move(sc));
         }
     }
+    // 屏幕枚举诊断(启动/重建时输出一次): 确认当前工具看到了哪几个屏, 各屏是否配对DXGI
+    {
+        std::string diag = "[Screen] 屏幕数=" + std::to_string(mons.size()) + " DXGI捕获数=" + std::to_string(capturers.size());
+        diag += " | 屏:";
+        for (const auto& r : mons)
+        {
+            diag += " (" + std::to_string(r.left) + "," + std::to_string(r.top) + ")-" +
+                    std::to_string(r.right - r.left) + "x" + std::to_string(r.bottom - r.top);
+        }
+        diag += " | DXGI:";
+        for (const auto& c : capturers)
+        {
+            diag += " (" + std::to_string(c.rect.left) + "," + std::to_string(c.rect.top) + ")-" +
+                    std::to_string(c.rect.right - c.rect.left) + "x" + std::to_string(c.rect.bottom - c.rect.top);
+        }
+        DebugLog::Log(diag);
+    }
 
     while (m_stop.load())
     {
@@ -510,6 +560,22 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 {
                     capturers.push_back(std::move(sc));
                 }
+            }
+            {
+                std::string diag = "[Screen重建] 屏幕数=" + std::to_string(mons.size()) + " DXGI捕获数=" + std::to_string(capturers.size());
+                diag += " | 屏:";
+                for (const auto& r : mons)
+                {
+                    diag += " (" + std::to_string(r.left) + "," + std::to_string(r.top) + ")-" +
+                            std::to_string(r.right - r.left) + "x" + std::to_string(r.bottom - r.top);
+                }
+                diag += " | DXGI:";
+                for (const auto& c : capturers)
+                {
+                    diag += " (" + std::to_string(c.rect.left) + "," + std::to_string(c.rect.top) + ")-" +
+                            std::to_string(c.rect.right - c.rect.left) + "x" + std::to_string(c.rect.bottom - c.rect.top);
+                }
+                DebugLog::Log(diag);
             }
         }
         if (mons.empty())
