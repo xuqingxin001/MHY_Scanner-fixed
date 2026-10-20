@@ -99,7 +99,7 @@ struct ScreenCapturer
     RECT rect{};
     bool dxgiUsable = false;
     int dxgiFailCount = 0; // 连续无新帧计数, 超过阈值永久回退GDI(远程软件抢占桌面复制时DXGI常超时)
-    std::atomic<int> dxgiScanMiss = 0; // DXGI帧连续识别不到二维码计数(坏帧漏判兜底), 超过阈值该屏永久回退GDI
+    int dxgiScanMiss = 0; // DXGI帧连续识别不到二维码计数(坏帧漏判兜底), 超过阈值该屏永久回退GDI
 
     // 按全局输出序号初始化 DXGI 桌面复制, 记录虚拟桌面坐标用于与 GDI 屏配对
     bool Init(int outputIdx)
@@ -385,7 +385,7 @@ void QRCodeForScreen::LoginOfficial()
                 {
                     capRes = sc.CaptureDXGI(mBuffer[i], mW[i], mH[i]);
                     // DXGI帧连续识别不到二维码(坏帧形态漏判兜底): 该屏永久降级GDI, 抓真实画面快速识别
-                    if (sc.dxgiScanMiss.load() >= 20 && sc.dxgiUsable)
+                    if (sc.dxgiScanMiss >= 20 && sc.dxgiUsable)
                     {
                         sc.dxgiUsable = false;
                         DebugLog::Log("[Screen] DXGI连续识别不到二维码, 该屏降级GDI");
@@ -431,7 +431,7 @@ void QRCodeForScreen::LoginOfficial()
                         {
                             if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                             {
-                                sc.dxgiScanMiss.fetch_add(1);
+                                ++sc.dxgiScanMiss;
                                 break;
                             }
                         }
@@ -448,7 +448,7 @@ void QRCodeForScreen::LoginOfficial()
                     {
                         if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                         {
-                            sc.dxgiScanMiss.store(0);
+                            sc.dxgiScanMiss = 0;
                             break;
                         }
                     }
@@ -643,7 +643,7 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 {
                     capRes = sc.CaptureDXGI(mBuffer[i], mW[i], mH[i]);
                     // DXGI帧连续识别不到二维码(坏帧形态漏判兜底): 该屏永久降级GDI, 抓真实画面快速识别
-                    if (sc.dxgiScanMiss.load() >= 20 && sc.dxgiUsable)
+                    if (sc.dxgiScanMiss >= 20 && sc.dxgiUsable)
                     {
                         sc.dxgiUsable = false;
                         DebugLog::Log("[Screen] DXGI连续识别不到二维码, 该屏降级GDI");
@@ -689,7 +689,7 @@ void QRCodeForScreen::LoginBH3BiliBili()
                         {
                             if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                             {
-                                sc.dxgiScanMiss.fetch_add(1);
+                                ++sc.dxgiScanMiss;
                                 break;
                             }
                         }
@@ -710,7 +710,7 @@ void QRCodeForScreen::LoginBH3BiliBili()
                     {
                         if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                         {
-                            sc.dxgiScanMiss.store(0);
+                            sc.dxgiScanMiss = 0;
                             break;
                         }
                     }
