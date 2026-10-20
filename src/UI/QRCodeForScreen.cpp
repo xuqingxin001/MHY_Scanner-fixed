@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <thread>
+#include <atomic>
 #include <algorithm>
 #include <vector>
 #include <Windows.h>
@@ -98,6 +99,7 @@ struct ScreenCapturer
     RECT rect{};
     bool dxgiUsable = false;
     int dxgiFailCount = 0; // 连续无新帧计数, 超过阈值永久回退GDI(远程软件抢占桌面复制时DXGI常超时)
+    std::atomic<int> dxgiScanMiss = 0; // DXGI帧连续识别不到二维码计数(坏帧漏判兜底), 超过阈值该屏永久回退GDI
 
     // 按全局输出序号初始化 DXGI 桌面复制, 记录虚拟桌面坐标用于与 GDI 屏配对
     bool Init(int outputIdx)
@@ -382,6 +384,12 @@ void QRCodeForScreen::LoginOfficial()
                 if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                 {
                     capRes = sc.CaptureDXGI(mBuffer[i], mW[i], mH[i]);
+                    // DXGI帧连续识别不到二维码(坏帧形态漏判兜底): 该屏永久降级GDI, 抓真实画面快速识别
+                    if (sc.dxgiScanMiss.load() >= 20 && sc.dxgiUsable)
+                    {
+                        sc.dxgiUsable = false;
+                        DebugLog::Log("[Screen] DXGI连续识别不到二维码, 该屏降级GDI");
+                    }
                     break;
                 }
             }
@@ -407,7 +415,8 @@ void QRCodeForScreen::LoginOfficial()
             cv::imshow("Video_Stream", img);
             cv::waitKey(1);
 #endif
-            threadPool.tryStart([&, img = std::move(img)]() {
+            const bool isDxgiFrame = (capRes == 0);
+            threadPool.tryStart([&, img = std::move(img), i, isDxgiFrame]() {
                 thread_local QRScanner qrScanners;
                 std::string str;
                 qrScanners.decodeSingle(img, str);
@@ -415,12 +424,36 @@ void QRCodeForScreen::LoginOfficial()
                 bool isWebLogin = false;
                 if (!parseOfficialQRCode(str, ticket, isWebLogin))
                 {
+                    // DXGI帧连续识别不到二维码 → 累计, 由主循环降级GDI(坏帧漏判兜底)
+                    if (isDxgiFrame)
+                    {
+                        for (auto& sc : capturers)
+                        {
+                            if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
+                            {
+                                sc.dxgiScanMiss.fetch_add(1);
+                                break;
+                            }
+                        }
+                    }
                     return;
                 }
                 if (lastTicket == ticket)
                 {
                     return;
                 }
+                if (isDxgiFrame)
+                {
+                    for (auto& sc : capturers)
+                    {
+                        if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
+                        {
+                            sc.dxgiScanMiss.store(0);
+                            break;
+                        }
+                    }
+                }
+                DebugLog::Log("[QRCode] 识别到二维码 ticket=" + ticket.substr(0, 8) + " isWebLogin=" + (isWebLogin ? "1" : "0"));
                 if (mtx.try_lock())
                 {
                     if (!m_stop.load())
@@ -609,6 +642,12 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
                 {
                     capRes = sc.CaptureDXGI(mBuffer[i], mW[i], mH[i]);
+                    // DXGI帧连续识别不到二维码(坏帧形态漏判兜底): 该屏永久降级GDI, 抓真实画面快速识别
+                    if (sc.dxgiScanMiss.load() >= 20 && sc.dxgiUsable)
+                    {
+                        sc.dxgiUsable = false;
+                        DebugLog::Log("[Screen] DXGI连续识别不到二维码, 该屏降级GDI");
+                    }
                     break;
                 }
             }
@@ -634,13 +673,30 @@ void QRCodeForScreen::LoginBH3BiliBili()
             cv::imshow("Video_Stream", img);
             cv::waitKey(1);
 #endif
-            threadPool.tryStart([&, img = std::move(img)]() {
+            const bool isDxgiFrame = (capRes == 0);
+            threadPool.tryStart([&, img = std::move(img), i, isDxgiFrame]() {
                 thread_local QRScanner qrScanners;
                 std::string str;
                 qrScanners.decodeSingle(img, str);
                 std::string ticket;
                 bool isWebLogin = false;
-                if (!parseOfficialQRCode(str, ticket, isWebLogin) || gameType != GameType::Honkai3 || isWebLogin)
+                if (!parseOfficialQRCode(str, ticket, isWebLogin))
+                {
+                    // DXGI帧连续识别不到二维码 → 累计, 由主循环降级GDI(坏帧漏判兜底)
+                    if (isDxgiFrame)
+                    {
+                        for (auto& sc : capturers)
+                        {
+                            if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
+                            {
+                                sc.dxgiScanMiss.fetch_add(1);
+                                break;
+                            }
+                        }
+                    }
+                    return;
+                }
+                if (gameType != GameType::Honkai3 || isWebLogin)
                 {
                     return; // 网页端通行证二维码在B服模式下忽略(需官服stoken确认)
                 }
@@ -648,6 +704,18 @@ void QRCodeForScreen::LoginBH3BiliBili()
                 {
                     return;
                 }
+                if (isDxgiFrame)
+                {
+                    for (auto& sc : capturers)
+                    {
+                        if (sc.Matches(mX[i], mY[i], mW[i], mH[i]))
+                        {
+                            sc.dxgiScanMiss.store(0);
+                            break;
+                        }
+                    }
+                }
+                DebugLog::Log("[QRCode] 识别到二维码 ticket=" + ticket.substr(0, 8) + " isWebLogin=" + (isWebLogin ? "1" : "0"));
                 if (mtx.try_lock())
                 {
                     if (!m_stop.load())
