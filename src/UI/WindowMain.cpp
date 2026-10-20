@@ -340,7 +340,7 @@ void WindowMain::islogin(const ScanRet ret)
         Show_QMessageBox("提示", "扫码失败!");
         break;
     case ScanRet::FAILURE_2:
-        Show_QMessageBox("提示", "扫码二次确认失败!");
+        Show_QMessageBox("提示", "扫码确认失败! 二维码可能已过期, 请刷新游戏内二维码后重新扫码");
         break;
     case ScanRet::LIVESTOP:
         Show_QMessageBox("提示", "直播中断!");

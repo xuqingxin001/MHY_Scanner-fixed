@@ -587,8 +587,11 @@ inline ScanRet scanConfirm(const std::string& ticket, const std::string& uid, co
     std::cout << postBody.dump() << std::endl;
 #endif
 
-    // 加超时 + 异常保护 + 失败重试(最多2次), 避免确认请求挂起/解析异常导致卡住
-    for (int attempt = 0; attempt < 2; ++attempt)
+    // 轮询确认: 二维码有效期约120秒, 在有效期内持续等待手机扫码确认(每1.5秒一次);
+    // retcode=0 成功; -106=二维码过期 立即停止; 超110秒停止(避免无限等待)
+    const auto pollStart = std::chrono::steady_clock::now();
+    int lastRetcode = -999;
+    for (;;)
     {
         const auto response = cpr::Post(
             cpr::Url{ api::mhy::bh3::qrcode_confirm },
@@ -601,13 +604,19 @@ inline ScanRet scanConfirm(const std::string& ticket, const std::string& uid, co
             try
             {
                 const auto j = nlohmann::json::parse(response.text);
-                if (j.value("retcode", -1) == 0)
+                lastRetcode = j.value("retcode", -1);
+                if (lastRetcode == 0)
                 {
-                    DebugLog::Log("[MhyApi] B服崩坏3确认成功 attempt=" + std::to_string(attempt));
+                    DebugLog::Log("[MhyApi] B服崩坏3确认成功(轮询)");
                     return ScanRet::SUCCESS;
                 }
-                DebugLog::Log("[MhyApi] B服崩坏3确认返回非0 attempt=" + std::to_string(attempt) +
-                              " retcode=" + std::to_string(j.value("retcode", -1)));
+                if (lastRetcode == -106)
+                {
+                    // -106 = 二维码过期(米哈游SDK错误码), 重试无意义, 提示刷新二维码后重新扫码
+                    DebugLog::Log("[MhyApi] B服崩坏3确认返回二维码过期(-106)");
+                    break;
+                }
+                // 其他非0(手机尚未确认/状态未就绪): 继续轮询等待手机扫码确认
             }
             catch (const std::exception& e)
             {
@@ -616,14 +625,15 @@ inline ScanRet scanConfirm(const std::string& ticket, const std::string& uid, co
         }
         else
         {
-            DebugLog::Log("[MhyApi] B服崩坏3确认请求失败 attempt=" + std::to_string(attempt) +
-                          " http=" + std::to_string(response.status_code) +
+            DebugLog::Log("[MhyApi] B服崩坏3确认请求失败 http=" + std::to_string(response.status_code) +
                           (response.error ? " err=" + std::string(response.error.message) : ""));
         }
-        if (attempt < 1)
+        if (std::chrono::steady_clock::now() - pollStart > std::chrono::seconds(110))
         {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            DebugLog::Log("[MhyApi] B服崩坏3确认轮询超时(110s), 最后retcode=" + std::to_string(lastRetcode));
+            break;
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     }
     return ScanRet::FAILURE_2;
 }

@@ -98,6 +98,7 @@ struct ScreenCapturer
     RECT rect{};
     bool dxgiUsable = false;
     int dxgiFailCount = 0; // 连续无新帧计数, 超过阈值永久回退GDI(远程软件抢占桌面复制时DXGI常超时)
+    std::atomic<int> dxgiScanMiss = 0; // DXGI帧连续识别不到二维码计数(坏帧漏判兜底), 超过阈值永久回退GDI
 
     // 按全局输出序号初始化 DXGI 桌面复制, 记录虚拟桌面坐标用于与 GDI 屏配对
     bool Init(int outputIdx)
