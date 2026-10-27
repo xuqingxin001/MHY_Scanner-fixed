@@ -248,7 +248,7 @@ inline std::tuple<int, std::string> GetGameTokenByStoken(
 inline std::string PandaScanQRCode(
     const std::string_view url,
     const std::string_view ticket,
-    const GameType gameType)
+    const int appId)
 {
     if (url.empty() || ticket.empty())
     {
@@ -258,7 +258,7 @@ inline std::string PandaScanQRCode(
     const nlohmann::json body{
         { "passport_app_id", "bll8iq97cem8" },
         { "ticket", ticket },
-        { "app_id", static_cast<int>(gameType) },
+        { "app_id", appId },
         { "device", device_id },
         { "ts", GetUnixTimeStampSeconds() }
     };

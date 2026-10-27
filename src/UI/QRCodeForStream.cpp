@@ -127,7 +127,20 @@ void QRCodeForStream::LoginOfficial()
                         mtx.unlock();
                         return;
                     }
-                    const std::string passportQrUrl = PandaScanQRCode(scanUrl, ticket, gameType);
+                    // 以二维码URL自带的app_id为准(绝区零新旧客户端app_id分别为11/12, 与GameType枚举不总一致)
+                    int qrAppId = static_cast<int>(gameType);
+                    const std::string qrAppIdStr = getUrlQueryParam(str, "app_id");
+                    if (!qrAppIdStr.empty())
+                    {
+                        try
+                        {
+                            qrAppId = std::stoi(qrAppIdStr);
+                        }
+                        catch (...)
+                        {
+                        }
+                    }
+                    const std::string passportQrUrl = PandaScanQRCode(scanUrl, ticket, qrAppId);
                     if (!passportQrUrl.empty())
                     {
                         lastTicket = ticket;
