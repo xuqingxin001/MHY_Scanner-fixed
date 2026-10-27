@@ -77,7 +77,8 @@ std::string LiveBili::GetLinkByRealRoomID(const std::string& realRoomID)
         device_name:VTR-AL00
         dolby:1
 #endif
-        { "format", "0,2" },
+        // 同时申请HLS与FLV: HLS(m3u8)在部分CDN节点比FLV更易放行, GetStreamUrl优先选HLS, FLV兜底
+        { "format", "0,1,2" },
 #if 0
         free_type:0
         http:1
@@ -121,15 +122,40 @@ std::string LiveBili::GetStreamUrl(const cpr::Parameters param)
         const auto& data = playInfo["data"];
         const auto& playurl_info = data["playurl_info"];
         const auto& playurl = playurl_info["playurl"];
-        const auto& stream = playurl["stream"][0];
-        const auto& format = stream["format"][0];
-        const auto& codec = format["codec"][0];
-
-        std::string base_url = codec["base_url"].get<std::string>();
-        std::string extra = codec["url_info"][0]["extra"].get<std::string>();
-        std::string host = codec["url_info"][0]["host"].get<std::string>();
-
-        return host + base_url + extra;
+        const auto& streams = playurl["stream"];
+        // 优先HLS(m3u8), 其次FLV: 部分CDN节点对FLV原画拉流返回403而HLS可正常拉取
+        const std::string kPrefOrder[] = { "hls", "flv" };
+        for (const auto& pref : kPrefOrder)
+        {
+            for (const auto& stream : streams)
+            {
+                for (const auto& format : stream["format"])
+                {
+                    if (!format.contains("format_name"))
+                    {
+                        continue;
+                    }
+                    const std::string format_name = format["format_name"].get<std::string>();
+                    if (format_name != pref)
+                    {
+                        continue;
+                    }
+                    for (const auto& codec : format["codec"])
+                    {
+                        if (!codec.contains("url_info") || codec["url_info"].empty())
+                        {
+                            continue;
+                        }
+                        const auto& u = codec["url_info"][0];
+                        const std::string base_url = codec["base_url"].get<std::string>();
+                        const std::string extra = u.contains("extra") ? u["extra"].get<std::string>() : "";
+                        const std::string host = u["host"].get<std::string>();
+                        return host + base_url + extra;
+                    }
+                }
+            }
+        }
+        return "";
     }
     catch (const nlohmann::json::exception& e)
     {

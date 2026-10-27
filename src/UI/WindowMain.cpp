@@ -529,10 +529,20 @@ bool WindowMain::checkDuplicates(const std::string uid)
 
 bool WindowMain::GetStreamLink(const std::string& roomid, std::string& url, std::map<std::string, std::string>& heards)
 {
-    auto info = GetLiveInfo(static_cast<LivePlatform>(ui.comboBox->currentIndex()), roomid);
+    const LivePlatform platform = static_cast<LivePlatform>(ui.comboBox->currentIndex());
+    auto info = GetLiveInfo(platform, roomid);
     if (info.status == LiveStreamStatus::Normal)
     {
         url = info.link;
+        // B站CDN要求浏览器UA+Referer同时存在, 否则FLV拉流返回403,
+        // ffmpeg(avformat_open_input)失败 -> 监视直播间无画面也无提示.
+        if (platform == LivePlatform::BiliBili)
+        {
+            heards["user_agent"] =
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+            heards["headers"] = "Referer: https://live.bilibili.com/\r\n";
+        }
         return true;
     }
     else

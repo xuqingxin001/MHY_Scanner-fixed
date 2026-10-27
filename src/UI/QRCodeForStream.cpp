@@ -265,7 +265,8 @@ void QRCodeForStream::setUrl(const std::string& url, const std::map<std::string,
         av_dict_set(&pAvdictionary, it.first.c_str(), it.second.c_str(), 0);
     }
     av_dict_set(&pAvdictionary, "max_delay", "0", 0);
-    av_dict_set(&pAvdictionary, "probesize", "1024", 0);
+    // probesize需足够大: 1024字节对HLS播放列表(m3u8)探测不够, 会导致找不到流信息
+    av_dict_set(&pAvdictionary, "probesize", "5000000", 0);
     av_dict_set(&pAvdictionary, "packetsize", "128", 0);
     av_dict_set(&pAvdictionary, "rtbufsize", "0", 0);
     av_dict_set(&pAvdictionary, "delay", "0", 0);
